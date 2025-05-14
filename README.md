@@ -1,6 +1,6 @@
 # 🚀 qAeroChart
 
- Opensource ICAO charting solution built on QGIS, reimagining aeronautical charting with open-source power and QGIS precision.
+ Opensource aeronautical charting solution built on QGIS aimed at complying with ICAO SARPs, reimagining aeronautical charting with open-source power and QGIS precision.
 
 ***✈️ Built on QGIS. Designed to outfly legacy.***
 

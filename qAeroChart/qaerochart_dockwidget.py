@@ -611,6 +611,17 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             form.spinBox_moca_border.setValue(style.get('moca_border_width_mm', 1.0))
         if hasattr(form, 'spinBox_point_size'):
             form.spinBox_point_size.setValue(style.get('point_size_mm', 5.0))
+        if hasattr(form, 'checkBox_axis_reverse_labels'):
+            form.checkBox_axis_reverse_labels.setChecked(bool(style.get('axis_reverse_labels', True)))
+        if hasattr(form, 'spinBox_axis_max_nm'):
+            try:
+                form.spinBox_axis_max_nm.setValue(float(style.get('axis_max_nm', 12)))
+            except Exception:
+                form.spinBox_axis_max_nm.setValue(12.0)
+        if hasattr(form, 'checkBox_show_origin'):
+            form.checkBox_show_origin.setChecked(bool(style.get('show_origin', False)))
+        if hasattr(form, 'checkBox_show_point_symbols'):
+            form.checkBox_show_point_symbols.setChecked(bool(style.get('show_point_symbols', False)))
         # Map-unit controls
         if hasattr(form, 'checkBox_use_map_units'):
             form.checkBox_use_map_units.setChecked(bool(style.get('use_map_units', False)))
@@ -625,6 +636,23 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         if hasattr(form, 'checkBox_enforce_view_scale'):
             form.checkBox_enforce_view_scale.setChecked(bool(style.get('enforce_view_scale', True)))
         
+        # Load OCA single if present
+        try:
+            oca = config.get('oca', None)
+            if hasattr(form, 'checkBox_enable_oca') and hasattr(form, 'doubleSpinBox_oca_from_nm') and hasattr(form, 'doubleSpinBox_oca_to_nm') and hasattr(form, 'doubleSpinBox_oca_ft'):
+                if oca:
+                    form.checkBox_enable_oca.setChecked(True)
+                    try:
+                        form.doubleSpinBox_oca_from_nm.setValue(float(oca.get('from_nm', oca.get('from', 0.0))))
+                        form.doubleSpinBox_oca_to_nm.setValue(float(oca.get('to_nm', oca.get('to', 0.0))))
+                        form.doubleSpinBox_oca_ft.setValue(float(oca.get('oca_ft', oca.get('height_ft', 0.0))))
+                    except Exception:
+                        pass
+                else:
+                    form.checkBox_enable_oca.setChecked(False)
+        except Exception as e:
+            print(f"PLUGIN qAeroChart WARNING: Could not populate OCA UI: {e}")
+
         # Load profile points
         profile_points = config.get("profile_points", [])
         for point in profile_points:
@@ -770,6 +798,14 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             baseline = []
             if profile_points:
                 max_nm = max(p.get('distance_nm', 0) for p in profile_points)
+                # Respect axis_max_nm from UI if greater
+                try:
+                    if hasattr(form, 'spinBox_axis_max_nm'):
+                        ui_max = float(form.spinBox_axis_max_nm.value())
+                        if ui_max > max_nm:
+                            max_nm = ui_max
+                except Exception:
+                    pass
                 # ticks (short)
                 markers = geometry.create_distance_markers(max_nm, marker_height_m=200)
                 for m in markers:
@@ -896,6 +932,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         line_width_mu = 30.0
         runway_width_mu = 50.0
         dist_width_mu = 15.0
+        axis_reverse_labels = True
+        axis_max_nm = 12.0
+        show_origin = False
+        show_point_symbols = False
         
         # Try to get values from spinboxes if they exist
         if hasattr(form, 'spinBox_line_width'):
@@ -904,6 +944,17 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             moca_border_width = form.spinBox_moca_border.value()
         if hasattr(form, 'spinBox_point_size'):
             point_size = form.spinBox_point_size.value()
+        if hasattr(form, 'checkBox_axis_reverse_labels'):
+            axis_reverse_labels = bool(form.checkBox_axis_reverse_labels.isChecked())
+        if hasattr(form, 'spinBox_axis_max_nm'):
+            try:
+                axis_max_nm = float(form.spinBox_axis_max_nm.value())
+            except Exception:
+                axis_max_nm = 12.0
+        if hasattr(form, 'checkBox_show_origin'):
+            show_origin = bool(form.checkBox_show_origin.isChecked())
+        if hasattr(form, 'checkBox_show_point_symbols'):
+            show_point_symbols = bool(form.checkBox_show_point_symbols.isChecked())
         # Map units
         if hasattr(form, 'checkBox_use_map_units'):
             use_map_units = bool(form.checkBox_use_map_units.isChecked())
@@ -943,6 +994,19 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         except Exception:
             moca_segments = []
 
+        # Optional OCA from UI
+        oca_value = None
+        try:
+            if hasattr(form, 'checkBox_enable_oca') and form.checkBox_enable_oca.isChecked():
+                if hasattr(form, 'doubleSpinBox_oca_from_nm') and hasattr(form, 'doubleSpinBox_oca_to_nm') and hasattr(form, 'doubleSpinBox_oca_ft'):
+                    oca_value = {
+                        'from_nm': float(form.doubleSpinBox_oca_from_nm.value()),
+                        'to_nm': float(form.doubleSpinBox_oca_to_nm.value()),
+                        'oca_ft': float(form.doubleSpinBox_oca_ft.value())
+                    }
+        except Exception as e:
+            print(f"PLUGIN qAeroChart WARNING: Could not read OCA UI: {e}")
+
         # Build config
         config = {
             'version': '2.0',
@@ -968,10 +1032,18 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 'view_scale_hint': view_scale_hint,      # target scale e.g., 1:12,000
                 'enforce_view_scale': enforce_view_scale,  # apply hint if current scale is farther away
                 # ICAO eAIP example default: reverse axis labels (e.g., 12→0)
-                'axis_reverse_labels': True
+                'axis_reverse_labels': axis_reverse_labels,
+                # Extend axis to explicit max even if series ends earlier
+                'axis_max_nm': axis_max_nm,
+                # Visual toggles
+                'show_origin': show_origin,
+                'show_point_symbols': show_point_symbols
             },
             # Provide explicit MOCA segments by default so the hatched area matches the example exactly
-            'moca_segments': moca_segments
+            'moca_segments': moca_segments,
+            # OCA rectangle from UI (optional)
+            'oca': oca_value,
+            'oca_segments': []
         }
         
         return config

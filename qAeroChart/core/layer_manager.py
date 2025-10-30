@@ -594,16 +594,23 @@ class LayerManager:
             unit_txt = f"{runway_width_mu}m (map units)" if use_map_units else f"{max(line_width,3.0)}mm"
             print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_RUNWAY} ({line_color}, {unit_txt})")
         
-        # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size
+        # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
         if point_layer:
             symbol = QgsSymbol.defaultSymbol(point_layer.geometryType())
-            symbol.setColor(QColor(255, 0, 0))  # Red
-            symbol.setSize(point_size)
-            symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+            show_points = bool(style.get('show_point_symbols', False))
+            if show_points:
+                symbol.setColor(QColor(255, 0, 0))  # Red
+                symbol.setSize(point_size)
+                symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+            else:
+                # Hide symbols: transparent and tiny
+                symbol.setColor(QColor(0, 0, 0, 0))
+                symbol.setSize(0.1)
+                symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
             point_layer.renderer().setSymbol(symbol)
             point_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to profile_point_symbol (red, {point_size}mm)")
+            print(f"PLUGIN qAeroChart: Applied style to profile_point_symbol (visible={show_points})")
         
         # Style for PROFILE_DIST - Gray tick lines, 0.3 mm
         dist_layer = self.layers.get(self.LAYER_DIST)
@@ -639,12 +646,8 @@ class LayerManager:
             
             try:
                 # Parse colors from hex
-                moca_color_str = moca_fill.lstrip('#')
-                if len(moca_color_str) == 8:  # RRGGBBAA
-                    r, g, b, a = int(moca_color_str[0:2], 16), int(moca_color_str[2:4], 16), int(moca_color_str[4:6], 16), int(moca_color_str[6:8], 16)
-                    color_str = f'{r},{g},{b},{a}'
-                else:  # RGB
-                    color_str = f'{int(moca_color_str[0:2], 16)},{int(moca_color_str[2:4], 16)},{int(moca_color_str[4:6], 16)},100'
+                # Use transparent fill to mimic eAIP hatch-only look
+                color_str = '0,0,0,0'
                 
                 # Create fill symbol with configurable parameters
                 symbol = QgsFillSymbol.createSimple({
@@ -657,7 +660,7 @@ class LayerManager:
                 
                 # Try to add diagonal line pattern
                 line_pattern = QgsLinePatternFillSymbolLayer()
-                line_pattern.setDistance(2.0)  # 2mm spacing
+                line_pattern.setDistance(1.6)  # slightly tighter spacing
                 line_pattern.setDistanceUnit(QgsUnitTypes.RenderMillimeters)
                 line_pattern.setLineAngle(45)  # 45 degree diagonal
                 
@@ -665,7 +668,7 @@ class LayerManager:
                 line_symbol = line_pattern.subSymbol()
                 if line_symbol:
                     line_symbol.setColor(QColor(moca_hatch))
-                    line_symbol.setWidth(0.5)  # 0.5mm lines
+                    line_symbol.setWidth(0.4)  # finer lines
                     line_symbol.setWidthUnit(QgsUnitTypes.RenderMillimeters)
                 
                 symbol.appendSymbolLayer(line_pattern)
@@ -684,7 +687,7 @@ class LayerManager:
             moca_layer.triggerRepaint()
             print(f"PLUGIN qAeroChart: Applied style to profile_MOCA (border: {moca_border_width}mm)")
 
-        # Style for BASELINE - thick, solid black flat-capped line
+        # Style for BASELINE - thick, dashed black line (small cuts)
         baseline_layer = self.layers.get(self.LAYER_BASELINE)
         if baseline_layer:
             bl_core = QgsSimpleLineSymbolLayer()
@@ -692,6 +695,15 @@ class LayerManager:
             try:
                 bl_core.setCapStyle(Qt.FlatCap)
                 bl_core.setJoinStyle(Qt.MiterJoin)
+                # Add subtle dash pattern like eAIP
+                try:
+                    bl_core.setUseCustomDashPattern(True)
+                    # pattern in mm: 6 on, 0.8 off (small cuts)
+                    bl_core.setCustomDashVector([6.0, 0.8])
+                    bl_core.setCustomDashPatternUnit(QgsUnitTypes.RenderMillimeters)
+                except Exception:
+                    from qgis.PyQt.QtCore import Qt as QtCoreQt
+                    bl_core.setPenStyle(QtCoreQt.DashLine)
             except Exception:
                 pass
             if use_map_units:
@@ -720,7 +732,7 @@ class LayerManager:
                 gl.setWidth(10.0)
                 gl.setWidthUnit(QgsUnitTypes.RenderMapUnits)
             else:
-                gl.setWidth(0.3)
+                gl.setWidth(0.2)
                 gl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             try:
                 # Simple dashed appearance
@@ -1019,18 +1031,20 @@ class LayerManager:
         layer_dist = self.layers.get(self.LAYER_DIST)
         layer_moca = self.layers.get(self.LAYER_MOCA)
         
-        # 1. Prepare ORIGIN marker
-        if layer_point:
-            feat = QgsFeature(layer_point.fields())
-            feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
-            feat.setAttributes(["ORIGIN", "origin", 0.0, 0.0, "Origin point - WHERE the profile is drawn"])
-            point_features.append(feat)
-        
-        if layer_label:
-            feat = QgsFeature(layer_label.fields())
-            feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
-            feat.setAttributes(["ORIGIN", "origin", 0.0, 12])
-            label_features.append(feat)
+        # 1. Prepare ORIGIN marker (optional by style)
+        style = config.get('style', {}) if config else {}
+        show_origin = bool(style.get('show_origin', False))
+        if show_origin:
+            if layer_point:
+                feat = QgsFeature(layer_point.fields())
+                feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
+                feat.setAttributes(["ORIGIN", "origin", 0.0, 0.0, "Origin point - WHERE the profile is drawn"])
+                point_features.append(feat)
+            if layer_label:
+                feat = QgsFeature(layer_label.fields())
+                feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
+                feat.setAttributes(["ORIGIN", "origin", 0.0, 12])
+                label_features.append(feat)
         
         print(f"PLUGIN qAeroChart: Prepared ORIGIN marker at X={origin_point.x():.2f}, Y={origin_point.y():.2f}")
         
@@ -1181,7 +1195,14 @@ class LayerManager:
         
         # 5. Prepare distance markers (tick line segments)
         if profile_points:
+            # Axis length: prefer explicit axis_max_nm in style, else use max point distance
             max_distance_nm = max(float(p.get('distance_nm', 0)) for p in profile_points)
+            try:
+                axis_max = float(style.get('axis_max_nm', max_distance_nm))
+                if axis_max > max_distance_nm:
+                    max_distance_nm = axis_max
+            except Exception:
+                pass
             markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=200)
             # Additionally, prepare full-height gridlines at each NM
             grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=3000)
@@ -1213,7 +1234,6 @@ class LayerManager:
             # Axis labels under baseline at each NM
             if layer_label:
                 try:
-                    style = config.get('style', {}) if config else {}
                     reverse_axis = bool(style.get('axis_reverse_labels', False))
                     for i in range(int(max_distance_nm) + 1):
                         # place slightly below baseline (~60 ft)
@@ -1264,10 +1284,10 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
         except Exception as e:
             print(f"PLUGIN qAeroChart WARNING: OCA segments processing failed: {e}")
-        # If explicit MOCA segments are provided, prefer them and skip per-point MOCA to avoid duplicates
+        # If explicit MOCA or OCA segments are provided, skip per-point MOCA to avoid duplicates
         has_explicit_moca = False
         try:
-            has_explicit_moca = bool(config.get('moca_segments'))
+            has_explicit_moca = bool(config.get('moca_segments')) or bool(config.get('oca')) or bool(config.get('oca_segments'))
         except Exception:
             has_explicit_moca = False
         if not has_explicit_moca:
@@ -1442,6 +1462,13 @@ class LayerManager:
             # Rebuild grid features to ensure we didn't just prepare without adding
             if profile_points:
                 max_distance_nm = max(float(p.get('distance_nm', 0)) for p in profile_points)
+                # Respect axis_max_nm from style if provided
+                try:
+                    axis_max = float(style.get('axis_max_nm', max_distance_nm))
+                    if axis_max > max_distance_nm:
+                        max_distance_nm = axis_max
+                except Exception:
+                    pass
                 grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=3000)
                 grid_features = []
                 for marker in grid_markers:

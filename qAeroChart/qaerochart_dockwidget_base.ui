@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QAeroChartDockWidgetBase</class>
+ <widget class="QDockWidget" name="QAeroChartDockWidgetBase">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>400</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>qAeroChart</string>
+  </property>
+  <widget class="QWidget" name="dockWidgetContents">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QLabel" name="labelTitle">
+      <property name="font">
+       <font>
+        <pointsize>12</pointsize>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="text">
+       <string>ICAO Aeronautical Charts</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="Line" name="line">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QStackedWidget" name="stackedWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <!-- PAGE 0: MENU -->
+      <widget class="QWidget" name="pageMenu">
+       <layout class="QVBoxLayout" name="verticalLayout_menu">
+        <item>
+         <widget class="QGroupBox" name="groupBoxProfiles">
+          <property name="title">
+           <string>📂 Profile Charts</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_profiles">
+           <item>
+            <widget class="QListWidget" name="listWidgetProfiles">
+             <property name="minimumSize">
+              <size>
+               <width>0</width>
+               <height>200</height>
+              </size>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QListWidget::item { padding: 8px; border-bottom: 1px solid #e0e0e0; }
+QListWidget::item:selected { background-color: #e3f2fd; color: black; }
+QListWidget::item:hover { background-color: #f5f5f5; }</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_profile_actions">
+             <item>
+              <widget class="QPushButton" name="btnNewProfile">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>35</height>
+                </size>
+               </property>
+               <property name="styleSheet">
+                <string notr="true">background-color: #4CAF50; color: white; font-weight: bold;</string>
+               </property>
+               <property name="text">
+                <string>➕ New Profile</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnEditProfile">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>35</height>
+                </size>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>✏️ Edit</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnDrawProfile">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>35</height>
+                </size>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="text">
+                <string>📍 Draw</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btnDeleteProfile">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>35</height>
+                </size>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="styleSheet">
+                <string notr="true">background-color: #f44336; color: white;</string>
+               </property>
+               <property name="text">
+                <string>🗑️ Delete</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+      <!-- PAGE 1: PROFILE CREATION FORM -->
+      <widget class="QWidget" name="pageProfileForm">
+       <layout class="QVBoxLayout" name="verticalLayout_form">
+        <item>
+         <widget class="QPushButton" name="btnBackToMenu">
+          <property name="text">
+           <string>← Back to Menu</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QScrollArea" name="scrollArea">
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <widget class="QWidget" name="scrollAreaWidgetContents">
+           <property name="geometry">
+            <rect>
+             <x>0</x>
+             <y>0</y>
+             <width>360</width>
+             <height>800</height>
+            </rect>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_scroll">
+            <!-- FORM CONTENT WILL BE LOADED HERE -->
+            <item>
+             <widget class="QLabel" name="labelFormPlaceholder">
+              <property name="text">
+               <string>Profile form will be loaded here...</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

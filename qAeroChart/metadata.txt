@@ -1,0 +1,60 @@
+# This file contains metadata for your plugin.
+
+# Mandatory items:
+
+[general]
+name=qAeroChart
+qgisMinimumVersion=3.0
+description=ICAO Aeronautical Chart Plugin - Create approach profiles and aeronautical charts
+version=0.1.0
+author=andures
+email=your.email@example.com
+
+about=Plugin para crear cartas aeronáuticas según estándares ICAO Annex 14 y Doc 8697.
+    
+    Características:
+    - Creación de perfiles de aproximación (Approach Profiles)
+    - Capas de memoria organizadas automáticamente
+    - Sistema de guardado/carga de configuraciones JSON
+    - Herramienta interactiva de selección en mapa
+    - Compatible con estándares ICAO
+    
+    Funcionalidades:
+    * Profile Creation (Issue #1) - Crear perfiles de aproximación con puntos MAPt, FAF, IF
+    * Gestión automática de capas en grupos
+    * Validación de entrada de parámetros
+    * Exportación e importación de configuraciones
+
+tracker=https://github.com/andures/qAeroChart/issues
+repository=https://github.com/andures/qAeroChart
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=no
+# Uncomment the following line and add your changelog:
+changelog=0.1.0 - Initial Release
+    - Profile Creation feature (Issue #1)
+    - Memory layer management
+    - Interactive map point selection
+    - JSON configuration system
+
+# Tags are comma separated with spaces allowed
+tags=aviation,aeronautical,ICAO,charts,approach,profile,annex14,obstacles,surfaces
+
+homepage=https://github.com/andures/qAeroChart
+category=Vector
+icon=icons/icon.png
+# experimental flag
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just to the uploaded version)
+deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+# If the plugin can run on QGIS Server.
+server=False

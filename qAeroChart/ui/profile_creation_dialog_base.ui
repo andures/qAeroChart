@@ -1,0 +1,596 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ProfileCreationDialogBase</class>
+ <widget class="QDialog" name="ProfileCreationDialogBase">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>600</width>
+    <height>750</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Create Profile Chart</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>6</number>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="groupBox_reference">
+     <property name="title">
+      <string>Origin Point (Where to draw profile)</string>
+     </property>
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QLineEdit" name="lineEdit_reference">
+        <property name="placeholderText">
+         <string>Click map to select origin point for drawing</string>
+        </property>
+        <property name="readOnly">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_select_point">
+        <property name="text">
+         <string>Select from Map</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_runway">
+     <property name="title">
+      <string>Runway Parameters</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout">
+      <property name="verticalSpacing">
+       <number>4</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_direction">
+        <property name="text">
+         <string>Runway Direction:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="lineEdit_direction">
+        <property name="placeholderText">
+         <string>e.g., 09/27</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_length">
+        <property name="text">
+         <string>Runway Length (m):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="lineEdit_length">
+        <property name="placeholderText">
+         <string>3000</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_thr_elev">
+        <property name="text">
+         <string>THR Elevation (ft):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="lineEdit_thr_elev">
+        <property name="placeholderText">
+         <string>500</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_tch_rdh">
+        <property name="text">
+         <string>TCH/RDH (ft):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLineEdit" name="lineEdit_tch_rdh">
+        <property name="placeholderText">
+         <string>50</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_style">
+     <property name="title">
+      <string>Style Parameters</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_style">
+      <property name="verticalSpacing">
+       <number>4</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_line_width">
+        <property name="text">
+         <string>Line Width (mm):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QDoubleSpinBox" name="spinBox_line_width">
+        <property name="minimum">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>10.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>0.500000000000000</double>
+        </property>
+        <property name="value">
+         <double>2.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_moca_border">
+        <property name="text">
+         <string>MOCA Border (mm):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QDoubleSpinBox" name="spinBox_moca_border">
+        <property name="minimum">
+         <double>0.100000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>10.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>0.500000000000000</double>
+        </property>
+        <property name="value">
+         <double>1.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_point_size">
+        <property name="text">
+         <string>Point Size (mm):</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QDoubleSpinBox" name="spinBox_point_size">
+        <property name="minimum">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>20.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>1.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>5.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+         <item row="3" column="0" colspan="2">
+            <widget class="QCheckBox" name="checkBox_axis_reverse_labels">
+             <property name="text">
+                <string>Reverse axis labels (e.g., 12 → 0)</string>
+             </property>
+             <property name="checked">
+                <bool>true</bool>
+             </property>
+            </widget>
+         </item>
+         <item row="4" column="0">
+            <widget class="QLabel" name="label_axis_max_nm">
+             <property name="text">
+                <string>Axis max (NM):</string>
+             </property>
+            </widget>
+         </item>
+         <item row="4" column="1">
+            <widget class="QDoubleSpinBox" name="spinBox_axis_max_nm">
+             <property name="minimum">
+                <double>1.000000000000000</double>
+             </property>
+             <property name="maximum">
+                <double>100.000000000000000</double>
+             </property>
+             <property name="singleStep">
+                <double>0.500000000000000</double>
+             </property>
+             <property name="value">
+                <double>12.000000000000000</double>
+             </property>
+            </widget>
+         </item>
+     <item row="5" column="0" colspan="2">
+      <widget class="QCheckBox" name="checkBox_use_map_units">
+       <property name="text">
+        <string>Use map units (meters) for line widths</string>
+       </property>
+       <property name="checked">
+        <bool>false</bool>
+       </property>
+      </widget>
+     </item>
+         <item row="6" column="0">
+      <widget class="QLabel" name="label_line_width_mu">
+       <property name="text">
+        <string>Main Line Width (m):</string>
+       </property>
+      </widget>
+     </item>
+         <item row="6" column="1">
+      <widget class="QDoubleSpinBox" name="spinBox_line_width_mu">
+       <property name="minimum">
+        <double>1.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>1000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>5.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>30.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+         <item row="7" column="0">
+      <widget class="QLabel" name="label_runway_width_mu">
+       <property name="text">
+        <string>Runway Line Width (m):</string>
+       </property>
+      </widget>
+     </item>
+         <item row="7" column="1">
+      <widget class="QDoubleSpinBox" name="spinBox_runway_width_mu">
+       <property name="minimum">
+        <double>1.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>1000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>5.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>50.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+         <item row="8" column="0">
+      <widget class="QLabel" name="label_dist_width_mu">
+       <property name="text">
+        <string>Tick Width (m):</string>
+       </property>
+      </widget>
+     </item>
+         <item row="8" column="1">
+      <widget class="QDoubleSpinBox" name="spinBox_dist_width_mu">
+       <property name="minimum">
+        <double>1.000000000000000</double>
+       </property>
+       <property name="maximum">
+        <double>1000.000000000000000</double>
+       </property>
+       <property name="singleStep">
+        <double>5.000000000000000</double>
+       </property>
+       <property name="value">
+        <double>15.000000000000000</double>
+       </property>
+      </widget>
+     </item>
+        <item row="9" column="0">
+     <widget class="QLabel" name="label_view_scale_hint">
+      <property name="text">
+       <string>View Scale Hint (1:)</string>
+      </property>
+     </widget>
+    </item>
+        <item row="9" column="1">
+     <widget class="QSpinBox" name="spinBox_view_scale_hint">
+      <property name="minimum">
+       <number>1000</number>
+      </property>
+      <property name="maximum">
+       <number>200000</number>
+      </property>
+      <property name="singleStep">
+       <number>500</number>
+      </property>
+      <property name="value">
+       <number>12000</number>
+      </property>
+     </widget>
+    </item>
+        <item row="10" column="0" colspan="2">
+     <widget class="QCheckBox" name="checkBox_enforce_view_scale">
+      <property name="text">
+       <string>Enforce View Scale</string>
+      </property>
+      <property name="checked">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+        <item row="11" column="0" colspan="2">
+         <widget class="QCheckBox" name="checkBox_show_origin">
+            <property name="text">
+             <string>Show ORIGIN marker</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+         </widget>
+        </item>
+        <item row="12" column="0" colspan="2">
+         <widget class="QCheckBox" name="checkBox_show_point_symbols">
+            <property name="text">
+             <string>Show point symbols</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+         </widget>
+        </item>
+     </layout>
+    </widget>
+   </item>
+     <item>
+        <widget class="QGroupBox" name="groupBox_oca">
+         <property name="title">
+            <string>Obstacle Coverage (OCA)</string>
+         </property>
+         <layout class="QGridLayout" name="gridLayout_oca">
+            <item row="0" column="0" colspan="2">
+             <widget class="QCheckBox" name="checkBox_enable_oca">
+                <property name="text">
+                 <string>Enable OCA span</string>
+                </property>
+                <property name="checked">
+                 <bool>true</bool>
+                </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="label_oca_from">
+                <property name="text">
+                 <string>From (NM):</string>
+                </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox_oca_from_nm">
+                <property name="minimum">
+                 <double>0.000000000000000</double>
+                </property>
+                <property name="maximum">
+                 <double>100.000000000000000</double>
+                </property>
+                <property name="decimals">
+                 <number>2</number>
+                </property>
+                <property name="singleStep">
+                 <double>0.10</double>
+                </property>
+                <property name="value">
+                 <double>6.10</double>
+                </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="label_oca_to">
+                <property name="text">
+                 <string>To (NM):</string>
+                </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox_oca_to_nm">
+                <property name="minimum">
+                 <double>0.000000000000000</double>
+                </property>
+                <property name="maximum">
+                 <double>100.000000000000000</double>
+                </property>
+                <property name="decimals">
+                 <number>2</number>
+                </property>
+                <property name="singleStep">
+                 <double>0.10</double>
+                </property>
+                <property name="value">
+                 <double>0.00</double>
+                </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="label_oca_ft">
+                <property name="text">
+                 <string>OCA height (ft):</string>
+                </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox_oca_ft">
+                <property name="minimum">
+                 <double>0.000000000000000</double>
+                </property>
+                <property name="maximum">
+                 <double>20000.000000000000000</double>
+                </property>
+                <property name="singleStep">
+                 <double>10.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>950.000000000000000</double>
+                </property>
+             </widget>
+            </item>
+         </layout>
+        </widget>
+     </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_points">
+     <property name="title">
+      <string>Profile Points</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_2">
+      <property name="spacing">
+       <number>4</number>
+      </property>
+      <item>
+       <widget class="QTableWidget" name="tableWidget_points">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>200</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>250</height>
+         </size>
+        </property>
+        <property name="alternatingRowColors">
+         <bool>true</bool>
+        </property>
+        <property name="columnCount">
+         <number>5</number>
+        </property>
+        <column>
+         <property name="text">
+          <string>Point Name</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Distance (NM)</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Elevation (ft)</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>MOCA (ft)</string>
+         </property>
+        </column>
+        <column>
+         <property name="text">
+          <string>Notes</string>
+         </property>
+        </column>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QPushButton" name="btn_add_point">
+          <property name="text">
+           <string>Add Point</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btn_remove_point">
+          <property name="text">
+           <string>Remove Point</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="horizontalSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_buttons">
+     <item>
+      <widget class="QPushButton" name="btn_load_config">
+       <property name="text">
+        <string>Load Config</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_save_config">
+       <property name="text">
+        <string>Save Config</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_2">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_create">
+       <property name="text">
+        <string>Create Profile</string>
+       </property>
+       <property name="default">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="btn_cancel">
+       <property name="text">
+        <string>Cancel</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

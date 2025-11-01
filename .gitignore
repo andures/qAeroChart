@@ -1,0 +1,6 @@
+# Ignore archive files
+*.[Zz][Ii][Pp]
+*.[Rr][Aa][Rr]
+
+# Ignore PR markdown drafts in docs/
+docs/PR-issue-*.md

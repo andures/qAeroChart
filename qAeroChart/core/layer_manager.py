@@ -1250,50 +1250,98 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: Prepared {len(grid_markers)} grid lines")
         
     # 6. Prepare MOCA polygons
-        print(f"PLUGIN qAeroChart: === CREATING MOCA POLYGONS ===")
-        # First, handle OCA coverage rectangles if provided (added to same layer for hatch styling)
-        try:
-            oca_single = config.get('oca') if config else None
-            if oca_single and self.layers.get(self.LAYER_MOCA):
-                d1 = float(oca_single.get('from_nm', 0))
-                d2 = float(oca_single.get('to_nm', 0))
-                hft = float(oca_single.get('oca_ft', oca_single.get('height_ft', 0)))
-                poly = geometry.create_oca_box(d1, d2, hft)
-                feat = QgsFeature(layer_moca.fields())
-                feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
-                moca_features.append(feat)
-                print(f"PLUGIN qAeroChart: Added OCA polygon {d1}-{d2} NM @ {hft} ft")
-        except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: OCA single processing failed: {e}")
-        try:
-            oca_segments = config.get('oca_segments', []) if config else []
-            if oca_segments and self.layers.get(self.LAYER_MOCA):
-                print(f"PLUGIN qAeroChart: Processing OCA segments: {len(oca_segments)}")
-                for seg in oca_segments:
-                    try:
-                        d1 = float(seg.get('from_nm', seg.get('from', 0)))
-                        d2 = float(seg.get('to_nm', seg.get('to', 0)))
-                        hft = float(seg.get('oca_ft', seg.get('height_ft', 0)))
-                        poly = geometry.create_oca_box(d1, d2, hft)
-                        feat = QgsFeature(layer_moca.fields())
-                        feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                        feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
-                        moca_features.append(feat)
-                    except Exception as e:
-                        print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
-        except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: OCA segments processing failed: {e}")
-        # If explicit MOCA or OCA segments are provided, skip per-point MOCA to avoid duplicates
+        print(f"PLUGIN qAeroChart: === CREATING MOCA/OCA HATCH AREAS ===")
+        # Decide precedence: OCA > explicit MOCA > per-point MOCA
+        has_oca = False
         has_explicit_moca = False
         try:
-            has_explicit_moca = bool(config.get('moca_segments')) or bool(config.get('oca')) or bool(config.get('oca_segments'))
+            has_oca = bool(config.get('oca')) or bool(config.get('oca_segments'))
+            has_explicit_moca = bool(config.get('moca_segments'))
         except Exception:
-            has_explicit_moca = False
-        if not has_explicit_moca:
-            print(f"PLUGIN qAeroChart: Processing {len(profile_points)-1} possible MOCA segments (per-point)")
+            pass
+
+        if has_oca:
+            # Draw only OCA and skip all MOCA to avoid overlap
+            try:
+                oca_single = config.get('oca') if config else None
+                if oca_single and self.layers.get(self.LAYER_MOCA):
+                    d1 = float(oca_single.get('from_nm', 0))
+                    d2 = float(oca_single.get('to_nm', 0))
+                    hft = float(oca_single.get('oca_ft', oca_single.get('height_ft', 0)))
+                    poly = geometry.create_oca_box(d1, d2, hft)
+                    feat = QgsFeature(layer_moca.fields())
+                    feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                    feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                    moca_features.append(feat)
+                    print(f"PLUGIN qAeroChart: Added OCA polygon {d1}-{d2} NM @ {hft} ft")
+            except Exception as e:
+                print(f"PLUGIN qAeroChart WARNING: OCA single processing failed: {e}")
+            try:
+                oca_segments = config.get('oca_segments', []) if config else []
+                if oca_segments and self.layers.get(self.LAYER_MOCA):
+                    print(f"PLUGIN qAeroChart: Processing OCA segments: {len(oca_segments)}")
+                    for seg in oca_segments:
+                        try:
+                            d1 = float(seg.get('from_nm', seg.get('from', 0)))
+                            d2 = float(seg.get('to_nm', seg.get('to', 0)))
+                            hft = float(seg.get('oca_ft', seg.get('height_ft', 0)))
+                            poly = geometry.create_oca_box(d1, d2, hft)
+                            feat = QgsFeature(layer_moca.fields())
+                            feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                            feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                            moca_features.append(feat)
+                        except Exception as e:
+                            print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
+            except Exception as e:
+                print(f"PLUGIN qAeroChart WARNING: OCA segments processing failed: {e}")
+            print("PLUGIN qAeroChart: OCA present → skipping all MOCA (explicit and per-point)")
         else:
-            print("PLUGIN qAeroChart: Explicit MOCA segments present → skipping per-point MOCA")
+            # No OCA provided; choose between explicit MOCA (preferred) or per-point MOCA
+            if has_explicit_moca:
+                try:
+                    explicit_moca = config.get('moca_segments', [])
+                    if explicit_moca and layer_moca:
+                        print(f"PLUGIN qAeroChart: Processing explicit MOCA segments: {len(explicit_moca)}")
+                        for seg in explicit_moca:
+                            try:
+                                d1 = float(seg.get('from_nm', seg.get('from', 0)))
+                                d2 = float(seg.get('to_nm', seg.get('to', 0)))
+                                hft = float(seg.get('moca_ft', seg.get('height_ft', 0)))
+                                poly = geometry.create_oca_box(d1, d2, hft)
+                                feat = QgsFeature(layer_moca.fields())
+                                feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                                feat.setAttributes([hft, f"{d1}-{d2}NM", 0.0])
+                                moca_features.append(feat)
+                            except Exception as e:
+                                print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
+                except Exception as e:
+                    print(f"PLUGIN qAeroChart WARNING: explicit MOCA processing failed: {e}")
+            else:
+                print(f"PLUGIN qAeroChart: Processing {len(profile_points)-1} possible MOCA segments (per-point)")
+                # fall back to per-point MOCA between consecutive points
+                for i in range(len(profile_points) - 1):
+                    point1 = profile_points[i]
+                    point2 = profile_points[i + 1]
+                    moca_ft = point1.get('moca_ft', '')
+                    print(f"PLUGIN qAeroChart: Segment {i}: {point1.get('point_name','')} → {point2.get('point_name','')}, MOCA={moca_ft}")
+                    if moca_ft and moca_ft.strip():
+                        try:
+                            moca_value = float(moca_ft)
+                            dist1_nm = float(point1.get('distance_nm', 0))
+                            dist2_nm = float(point2.get('distance_nm', 0))
+                            print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
+                            moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value)
+                            print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
+                            if layer_moca:
+                                feat = QgsFeature(layer_moca.fields())
+                                geom = QgsGeometry.fromPolygonXY([moca_polygon])
+                                feat.setGeometry(geom)
+                                feat.setAttributes([moca_value, f"{point1.get('point_name', '')} - {point2.get('point_name', '')}", 0.0])
+                                moca_features.append(feat)
+                                print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
+                        except (ValueError, TypeError) as e:
+                            print(f"PLUGIN qAeroChart: ❌ Could not create MOCA for segment: {e}")
+                            continue
         
         for i in range(len(profile_points) - 1):
             if has_explicit_moca:
@@ -1350,25 +1398,7 @@ class LayerManager:
             else:
                 print(f"PLUGIN qAeroChart:   ⚠️ No MOCA value for this segment")
 
-        # Optional explicit MOCA segments (more control than per-point moca_ft)
-        try:
-            explicit_moca = config.get('moca_segments', [])
-            if explicit_moca and layer_moca:
-                print(f"PLUGIN qAeroChart: Processing explicit MOCA segments: {len(explicit_moca)}")
-                for seg in explicit_moca:
-                    try:
-                        d1 = float(seg.get('from_nm', seg.get('from', 0)))
-                        d2 = float(seg.get('to_nm', seg.get('to', 0)))
-                        hft = float(seg.get('moca_ft', seg.get('height_ft', 0)))
-                        poly = geometry.create_oca_box(d1, d2, hft)
-                        feat = QgsFeature(layer_moca.fields())
-                        feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                        feat.setAttributes([hft, f"{d1}-{d2}NM", 0.0])
-                        moca_features.append(feat)
-                    except Exception as e:
-                        print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
-        except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: explicit MOCA processing failed: {e}")
+        # (Note) explicit MOCA handled above only when no OCA is present.
         
         # BATCH ADD: Add all features in bulk (single edit cycle per layer)
         print(f"PLUGIN qAeroChart: === BATCH ADDING FEATURES ===")

@@ -22,7 +22,7 @@
 """
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtWidgets import QAction, QMenu
 
 # Initialize Qt resources from file resources.py
 # from .resources import *
@@ -78,6 +78,12 @@ class QAeroChart:
         
         # Layer manager (will be initialized in initGui)
         self.layer_manager = None
+
+        # Dedicated toolbar for qAeroChart tools
+        self.tools_toolbar = None
+        self.generate_profile_action = None
+        # Top-level menu
+        self.top_menu = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -170,13 +176,56 @@ class QAeroChart:
 
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
-
         icon_path = os.path.join(self.plugin_dir, 'icons', 'icon.png')
+
+        # Do not add to default Vector/Plugins menu; we'll create our own top menu
         self.add_action(
             icon_path,
             text=self.tr(u'qAeroChart - ICAO Aeronautical Charts'),
             callback=self.run,
+            add_to_menu=False,
+            add_to_toolbar=False,
             parent=self.iface.mainWindow())
+
+        # Create dedicated toolbar and "Generate Profile" button (issue #4)
+        self.tools_toolbar = self.iface.addToolBar('qAeroChart tools')
+        self.tools_toolbar.setObjectName('qAeroChartTools')
+
+        self.generate_profile_action = QAction(QIcon(icon_path), self.tr('Generate Profile'), self.iface.mainWindow())
+        self.generate_profile_action.setObjectName('qAeroChartGenerateProfileAction')
+        self.generate_profile_action.setStatusTip(self.tr('Open qAeroChart and generate a profile'))
+        # For now, reuse existing entry point; opens the dock where user can generate/draw
+        self.generate_profile_action.triggered.connect(self.run)
+        self.tools_toolbar.addAction(self.generate_profile_action)
+
+        # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
+        try:
+            menu_bar = self.iface.mainWindow().menuBar()
+            self.top_menu = QMenu(self.tr('qAeroChart'), self.iface.mainWindow())
+            self.top_menu.setObjectName('qAeroChartMenu')
+            # Add our primary action
+            self.top_menu.addAction(self.generate_profile_action)
+
+            # Try to position it right after qPANSOPY
+            inserted = False
+            actions = menu_bar.actions()
+            for i, act in enumerate(actions):
+                try:
+                    title = act.text().replace('&', '').strip()
+                except Exception:
+                    title = ''
+                if title.lower() == 'qpansopy':
+                    if i + 1 < len(actions):
+                        menu_bar.insertMenu(actions[i + 1], self.top_menu)
+                    else:
+                        menu_bar.addMenu(self.top_menu)
+                    inserted = True
+                    break
+            if not inserted:
+                # Fallback: append at end
+                menu_bar.addMenu(self.top_menu)
+        except Exception as e:
+            print(f"PLUGIN qAeroChart WARNING: Could not create top-level menu: {e}")
         
         # Initialize map tool manager
         from .tools import ProfilePointToolManager
@@ -219,6 +268,27 @@ class QAeroChart:
                 self.tr(u'&qAeroChart'),
                 action)
             self.iface.removeToolBarIcon(action)
+        # Remove custom toolbar and its action
+        if self.tools_toolbar:
+            if self.generate_profile_action:
+                try:
+                    self.tools_toolbar.removeAction(self.generate_profile_action)
+                except Exception:
+                    pass
+            try:
+                # QGIS will handle deletion of toolbar instance
+                self.iface.mainWindow().removeToolBar(self.tools_toolbar)
+            except Exception:
+                pass
+            self.tools_toolbar = None
+            self.generate_profile_action = None
+        # Remove top-level menu
+        if self.top_menu:
+            try:
+                self.iface.mainWindow().menuBar().removeAction(self.top_menu.menuAction())
+            except Exception:
+                pass
+            self.top_menu = None
         
         # Clean up tool manager
         if self.tool_manager:

@@ -99,8 +99,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Connect table management buttons
         self._connect_form_buttons()
 
-        # Wire map-unit controls (enable/disable spinboxes based on checkbox)
-        self._wire_map_units_controls()
+    # Style parameters UI has been simplified; no map-unit toggle wiring needed
         
         # Initialize table with default rows
         self._initialize_profile_table()
@@ -110,31 +109,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         print("PLUGIN qAeroChart: Profile form initialized in dockwidget")
 
-    def _wire_map_units_controls(self):
-        """Enable/disable MU spinboxes according to the 'use map units' checkbox."""
-        try:
-            form = self.profile_form_widget
-            def _apply_enabled(state: bool):
-                for wname in [
-                    'spinBox_line_width_mu',
-                    'spinBox_runway_width_mu',
-                    'spinBox_dist_width_mu',
-                    'label_line_width_mu',
-                    'label_runway_width_mu',
-                    'label_dist_width_mu',
-                ]:
-                    w = getattr(form, wname, None)
-                    if w:
-                        w.setEnabled(state)
-            # initial state
-            cb = getattr(form, 'checkBox_use_map_units', None)
-            state = bool(cb.isChecked()) if cb else False
-            _apply_enabled(state)
-            # connect signal
-            if cb:
-                cb.toggled.connect(_apply_enabled)
-        except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: could not wire map-unit controls: {e}")
+    # Removed legacy map-units wiring (Issue #9: Style Parameters cleanup)
     
     def _connect_form_buttons(self):
         """Connect all buttons in the embedded form."""
@@ -602,39 +577,14 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.profile_form_widget.lineEdit_thr_elev.setText(runway.get("thr_elevation", ""))
         self.profile_form_widget.lineEdit_tch_rdh.setText(runway.get("tch_rdh", ""))
         
-        # Load style parameters if available
+        # Load only the axis max (Issue #9: Style Parameters cleanup)
         style = config.get("style", {})
         form = self.profile_form_widget
-        if hasattr(form, 'spinBox_line_width'):
-            form.spinBox_line_width.setValue(style.get('line_width_mm', 2.0))
-        if hasattr(form, 'spinBox_moca_border'):
-            form.spinBox_moca_border.setValue(style.get('moca_border_width_mm', 1.0))
-        if hasattr(form, 'spinBox_point_size'):
-            form.spinBox_point_size.setValue(style.get('point_size_mm', 5.0))
-        if hasattr(form, 'checkBox_axis_reverse_labels'):
-            form.checkBox_axis_reverse_labels.setChecked(bool(style.get('axis_reverse_labels', True)))
         if hasattr(form, 'spinBox_axis_max_nm'):
             try:
                 form.spinBox_axis_max_nm.setValue(float(style.get('axis_max_nm', 12)))
             except Exception:
                 form.spinBox_axis_max_nm.setValue(12.0)
-        if hasattr(form, 'checkBox_show_origin'):
-            form.checkBox_show_origin.setChecked(bool(style.get('show_origin', False)))
-        if hasattr(form, 'checkBox_show_point_symbols'):
-            form.checkBox_show_point_symbols.setChecked(bool(style.get('show_point_symbols', False)))
-        # Map-unit controls
-        if hasattr(form, 'checkBox_use_map_units'):
-            form.checkBox_use_map_units.setChecked(bool(style.get('use_map_units', False)))
-        if hasattr(form, 'spinBox_line_width_mu'):
-            form.spinBox_line_width_mu.setValue(float(style.get('line_width_mu', 30.0)))
-        if hasattr(form, 'spinBox_runway_width_mu'):
-            form.spinBox_runway_width_mu.setValue(float(style.get('runway_width_mu', 50.0)))
-        if hasattr(form, 'spinBox_dist_width_mu'):
-            form.spinBox_dist_width_mu.setValue(float(style.get('dist_width_mu', 15.0)))
-        if hasattr(form, 'spinBox_view_scale_hint'):
-            form.spinBox_view_scale_hint.setValue(int(style.get('view_scale_hint', 12000)))
-        if hasattr(form, 'checkBox_enforce_view_scale'):
-            form.checkBox_enforce_view_scale.setChecked(bool(style.get('enforce_view_scale', True)))
         
         # Load OCA single if present
         try:
@@ -786,7 +736,8 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 runway_len, tch_m = 0.0, 0.0
             
             from .core.profile_chart_geometry import ProfileChartGeometry
-            geometry = ProfileChartGeometry(origin_point)
+            # Use the same default VE as runtime population (10x) for preview
+            geometry = ProfileChartGeometry(origin_point, vertical_exaggeration=10.0)
             
             # Profile polyline
             profile_line = geometry.create_profile_line(profile_points)
@@ -806,8 +757,8 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                             max_nm = ui_max
                 except Exception:
                     pass
-                # ticks (short)
-                markers = geometry.create_distance_markers(max_nm, marker_height_m=200)
+                # ticks (short) – keep visual height ~200 m after VE
+                markers = geometry.create_distance_markers(max_nm, marker_height_m=(200.0/10.0))
                 for m in markers:
                     seg = m['geometry']  # [bottom, top]
                     if len(seg) >= 2:
@@ -815,8 +766,8 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                         # Label at the top of the tick
                         top_pt = seg[1]
                         tick_labels.append({'pos': top_pt, 'text': str(m.get('label', m.get('distance', '')))} )
-                # grid (full-height)
-                grid = geometry.create_distance_markers(max_nm, marker_height_m=3000)
+                # grid (full-height) – keep visual height ~1500 m after VE (shorter to reduce clutter)
+                grid = geometry.create_distance_markers(max_nm, marker_height_m=(1500.0/10.0))
                 for g in grid:
                     seg = g['geometry']
                     if len(seg) >= 2:
@@ -923,57 +874,20 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             )
             return None
         
-        # Get style parameters from UI (with fallback to defaults)
+        # Build minimal style config (Issue #9)
         form = self.profile_form_widget
-        line_width = 2.0
-        moca_border_width = 1.0
-        point_size = 5.0
-        use_map_units = False
-        line_width_mu = 30.0
-        runway_width_mu = 50.0
-        dist_width_mu = 15.0
-        axis_reverse_labels = True
+        vertical_exaggeration = 10.0
         axis_max_nm = 12.0
-        show_origin = False
-        show_point_symbols = False
-        
-        # Try to get values from spinboxes if they exist
-        if hasattr(form, 'spinBox_line_width'):
-            line_width = form.spinBox_line_width.value()
-        if hasattr(form, 'spinBox_moca_border'):
-            moca_border_width = form.spinBox_moca_border.value()
-        if hasattr(form, 'spinBox_point_size'):
-            point_size = form.spinBox_point_size.value()
-        if hasattr(form, 'checkBox_axis_reverse_labels'):
-            axis_reverse_labels = bool(form.checkBox_axis_reverse_labels.isChecked())
+        # Vertical exaggeration is fixed to 10x (no UI control)
+        try:
+            vertical_exaggeration = 10.0
+        except Exception:
+            vertical_exaggeration = 10.0
         if hasattr(form, 'spinBox_axis_max_nm'):
             try:
                 axis_max_nm = float(form.spinBox_axis_max_nm.value())
             except Exception:
                 axis_max_nm = 12.0
-        if hasattr(form, 'checkBox_show_origin'):
-            show_origin = bool(form.checkBox_show_origin.isChecked())
-        if hasattr(form, 'checkBox_show_point_symbols'):
-            show_point_symbols = bool(form.checkBox_show_point_symbols.isChecked())
-        # Map units
-        if hasattr(form, 'checkBox_use_map_units'):
-            use_map_units = bool(form.checkBox_use_map_units.isChecked())
-        if hasattr(form, 'spinBox_line_width_mu'):
-            line_width_mu = float(form.spinBox_line_width_mu.value())
-        if hasattr(form, 'spinBox_runway_width_mu'):
-            runway_width_mu = float(form.spinBox_runway_width_mu.value())
-        if hasattr(form, 'spinBox_dist_width_mu'):
-            dist_width_mu = float(form.spinBox_dist_width_mu.value())
-        # View scale settings
-        view_scale_hint = 12000
-        enforce_view_scale = True
-        if hasattr(form, 'spinBox_view_scale_hint'):
-            try:
-                view_scale_hint = int(form.spinBox_view_scale_hint.value())
-            except:
-                view_scale_hint = 12000
-        if hasattr(form, 'checkBox_enforce_view_scale'):
-            enforce_view_scale = bool(form.checkBox_enforce_view_scale.isChecked())
         
         # Derive explicit MOCA segments from table (use point i MOCA for segment i→i+1)
         moca_segments = []
@@ -1017,27 +931,9 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             'runway': runway,
             'profile_points': profile_points,
             'style': {
-                'line_width_mm': line_width,
-                'moca_border_width_mm': moca_border_width,
-                'point_size_mm': point_size,
-                'line_color': '#000000',  # Black
-                'moca_fill_color': '#6464FF64',  # Blue semi-transparent
-                'moca_hatch_color': '#000000',  # Black hatching
-                # Select units
-                'use_map_units': use_map_units,
-                'line_width_mu': line_width_mu,        # meters (ignored when use_map_units is False)
-                'runway_width_mu': runway_width_mu,    # meters
-                'dist_width_mu': dist_width_mu,        # meters
-                # Optional view normalization for consistent visibility
-                'view_scale_hint': view_scale_hint,      # target scale e.g., 1:12,000
-                'enforce_view_scale': enforce_view_scale,  # apply hint if current scale is farther away
-                # ICAO eAIP example default: reverse axis labels (e.g., 12→0)
-                'axis_reverse_labels': axis_reverse_labels,
+                'vertical_exaggeration': vertical_exaggeration,
                 # Extend axis to explicit max even if series ends earlier
-                'axis_max_nm': axis_max_nm,
-                # Visual toggles
-                'show_origin': show_origin,
-                'show_point_symbols': show_point_symbols
+                'axis_max_nm': axis_max_nm
             },
             # Provide explicit MOCA segments by default so the hatched area matches the example exactly
             'moca_segments': moca_segments,

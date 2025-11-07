@@ -482,18 +482,14 @@ class LayerManager:
         from qgis.PyQt.QtGui import QColor, QFont
         from qgis.PyQt.QtCore import Qt
         
-        # Get style parameters from config or use defaults
+        # Minimal, fixed styling (Issue #9: remove style parameters; rely on predefined styles later)
         style = config.get('style', {}) if config else {}
-        line_width = style.get('line_width_mm', 2.0)
-        use_map_units = bool(style.get('use_map_units', False))
-        line_width_mu = float(style.get('line_width_mu', 30.0))  # meters
-        dist_width_mu = float(style.get('dist_width_mu', 10.0))  # meters for tick lines if map units enabled
-        runway_width_mu = float(style.get('runway_width_mu', max(line_width_mu, 50.0)))
-        moca_border_width = style.get('moca_border_width_mm', 1.0)
-        point_size = style.get('point_size_mm', 5.0)
-        line_color = style.get('line_color', '#000000')
-        moca_fill = style.get('moca_fill_color', '#6464FF64')
-        moca_hatch = style.get('moca_hatch_color', '#000000')
+        line_width = 2.0
+        moca_border_width = 1.0
+        point_size = 5.0
+        line_color = '#000000'
+        moca_fill = '#6464FF64'
+        moca_hatch = '#000000'
         
         # Style for PROFILE_LINE - Black solid line, configurable width
         line_layer = self.layers.get(self.LAYER_LINE)
@@ -511,24 +507,17 @@ class LayerManager:
                 casing.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            if use_map_units:
-                core.setWidth(line_width_mu)
-                core.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-                casing.setWidth(line_width_mu * 1.8)
-                casing.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                core.setWidth(line_width)
-                core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-                casing.setWidth(line_width * 1.8)
-                casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            core.setWidth(line_width)
+            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            casing.setWidth(line_width * 1.8)
+            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             symbol = QgsLineSymbol()
             symbol.appendSymbolLayer(casing)
             symbol.appendSymbolLayer(core)
             # Always use a fresh single symbol renderer to avoid invalid renderer state
             line_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             line_layer.triggerRepaint()
-            unit_txt = f"{line_width_mu}m (map units)" if use_map_units else f"{line_width}mm"
-            print(f"PLUGIN qAeroChart: Applied style to profile_line ({line_color}, {unit_txt})")
+            print(f"PLUGIN qAeroChart: Applied style to profile_line ({line_color}, {line_width}mm)")
 
         # Style for simple 'final' line layer
         final_layer = self.layers.get(self.LAYER_LINE_FINAL)
@@ -544,23 +533,16 @@ class LayerManager:
                 casing.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            if use_map_units:
-                core.setWidth(line_width_mu)
-                core.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-                casing.setWidth(line_width_mu * 1.6)
-                casing.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                core.setWidth(line_width)
-                core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-                casing.setWidth(line_width * 1.6)
-                casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            core.setWidth(line_width)
+            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            casing.setWidth(line_width * 1.6)
+            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             symbol = QgsLineSymbol()
             symbol.appendSymbolLayer(casing)
             symbol.appendSymbolLayer(core)
             final_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             final_layer.triggerRepaint()
-            unit_txt = f"{line_width_mu}m (map units)" if use_map_units else f"{line_width}mm"
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_FINAL} ({line_color}, {unit_txt})")
+            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_FINAL} ({line_color}, {line_width}mm)")
 
         # Style for simple 'runway' line layer (slightly thicker)
         runway_layer_simple = self.layers.get(self.LAYER_LINE_RUNWAY)
@@ -576,41 +558,28 @@ class LayerManager:
                 casing.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            if use_map_units:
-                core.setWidth(runway_width_mu)
-                core.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-                casing.setWidth(runway_width_mu * 1.6)
-                casing.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                core.setWidth(max(line_width, 3.0))
-                core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-                casing.setWidth(max(line_width, 3.0) * 1.6)
-                casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            core.setWidth(max(line_width, 3.0))
+            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            casing.setWidth(max(line_width, 3.0) * 1.6)
+            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             symbol = QgsLineSymbol()
             symbol.appendSymbolLayer(casing)
             symbol.appendSymbolLayer(core)
             runway_layer_simple.setRenderer(QgsSingleSymbolRenderer(symbol))
             runway_layer_simple.triggerRepaint()
-            unit_txt = f"{runway_width_mu}m (map units)" if use_map_units else f"{max(line_width,3.0)}mm"
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_RUNWAY} ({line_color}, {unit_txt})")
+            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_RUNWAY} ({line_color}, {max(line_width,3.0)}mm)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
         if point_layer:
             symbol = QgsSymbol.defaultSymbol(point_layer.geometryType())
-            show_points = bool(style.get('show_point_symbols', False))
-            if show_points:
-                symbol.setColor(QColor(255, 0, 0))  # Red
-                symbol.setSize(point_size)
-                symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
-            else:
-                # Hide symbols: transparent and tiny
-                symbol.setColor(QColor(0, 0, 0, 0))
-                symbol.setSize(0.1)
-                symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+            # Always show point symbols (Issue #9)
+            symbol.setColor(QColor(255, 0, 0))  # Red
+            symbol.setSize(point_size)
+            symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
             point_layer.renderer().setSymbol(symbol)
             point_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to profile_point_symbol (visible={show_points})")
+            print(f"PLUGIN qAeroChart: Applied style to profile_point_symbol (visible=True)")
         
         # Style for PROFILE_DIST - Gray tick lines, 0.3 mm
         dist_layer = self.layers.get(self.LAYER_DIST)
@@ -619,20 +588,14 @@ class LayerManager:
             symbol.setColor(QColor(128, 128, 128))  # Gray
             # For line symbols, configure width in millimeters
             try:
-                if use_map_units:
-                    symbol.setWidth(dist_width_mu)
-                    from qgis.core import QgsUnitTypes
-                    symbol.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-                else:
-                    symbol.setWidth(0.3)
-                    from qgis.core import QgsUnitTypes
-                    symbol.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+                symbol.setWidth(0.3)
+                from qgis.core import QgsUnitTypes
+                symbol.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             except Exception:
                 pass
             dist_layer.renderer().setSymbol(symbol)
             dist_layer.triggerRepaint()
-            unit_txt = f"{dist_width_mu}m (map units)" if use_map_units else "0.3mm"
-            print(f"PLUGIN qAeroChart: Applied style to profile_dist (gray tick lines, {unit_txt})")
+            print(f"PLUGIN qAeroChart: Applied style to profile_dist (gray tick lines, 0.3mm)")
             # eAIP style: no 'N NM' labels on vertical ticks; axis labels below baseline are used instead.
             try:
                 dist_layer.setLabelsEnabled(False)
@@ -706,12 +669,8 @@ class LayerManager:
                     bl_core.setPenStyle(QtCoreQt.DashLine)
             except Exception:
                 pass
-            if use_map_units:
-                bl_core.setWidth(max(line_width_mu, 40.0))
-                bl_core.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                bl_core.setWidth(max(line_width, 2.5))
-                bl_core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            bl_core.setWidth(max(line_width, 2.5))
+            bl_core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             bl_symbol = QgsLineSymbol()
             bl_symbol.appendSymbolLayer(bl_core)
             baseline_layer.setRenderer(QgsSingleSymbolRenderer(bl_symbol))
@@ -728,12 +687,8 @@ class LayerManager:
                 gl.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            if use_map_units:
-                gl.setWidth(10.0)
-                gl.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                gl.setWidth(0.2)
-                gl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            gl.setWidth(0.2)
+            gl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             try:
                 # Simple dashed appearance
                 from qgis.PyQt.QtCore import Qt as QtCoreQt
@@ -803,12 +758,8 @@ class LayerManager:
                 kv.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            if use_map_units:
-                kv.setWidth(12.0)
-                kv.setWidthUnit(QgsUnitTypes.RenderMapUnits)
-            else:
-                kv.setWidth(0.6)
-                kv.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            kv.setWidth(0.6)
+            kv.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             try:
                 from qgis.PyQt.QtCore import Qt as QtCoreQt
                 kv.setPenStyle(QtCoreQt.DashLine)
@@ -1008,8 +959,13 @@ class LayerManager:
         tch = float(runway.get('tch_rdh', 0))
         self._dbg(f"Runway params -> length={runway_length}m, TCH={tch}m; profile_points={len(profile_points)}")
         
-        # Initialize geometry calculator in CARTESIAN mode (no heading needed)
-        geometry = ProfileChartGeometry(origin_point)
+        # Initialize geometry calculator with vertical exaggeration (default 10x)
+        ve = 10.0
+        try:
+            ve = float(config.get('style', {}).get('vertical_exaggeration', 10.0))
+        except Exception:
+            ve = 10.0
+        geometry = ProfileChartGeometry(origin_point, vertical_exaggeration=ve)
         
         # BATCH OPERATIONS: Collect all features first, then add in bulk
         point_features = []
@@ -1031,22 +987,8 @@ class LayerManager:
         layer_dist = self.layers.get(self.LAYER_DIST)
         layer_moca = self.layers.get(self.LAYER_MOCA)
         
-        # 1. Prepare ORIGIN marker (optional by style)
+        # Style cleanup (Issue #9): ORIGIN marker toggle removed; no origin feature added
         style = config.get('style', {}) if config else {}
-        show_origin = bool(style.get('show_origin', False))
-        if show_origin:
-            if layer_point:
-                feat = QgsFeature(layer_point.fields())
-                feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
-                feat.setAttributes(["ORIGIN", "origin", 0.0, 0.0, "Origin point - WHERE the profile is drawn"])
-                point_features.append(feat)
-            if layer_label:
-                feat = QgsFeature(layer_label.fields())
-                feat.setGeometry(QgsGeometry.fromPointXY(origin_point))
-                feat.setAttributes(["ORIGIN", "origin", 0.0, 12])
-                label_features.append(feat)
-        
-        print(f"PLUGIN qAeroChart: Prepared ORIGIN marker at X={origin_point.x():.2f}, Y={origin_point.y():.2f}")
         
         # 2. Prepare profile line
         if len(profile_points) >= 2:
@@ -1089,7 +1031,8 @@ class LayerManager:
                         deg = math.degrees(math.atan(grad_percent/100.0))
                         text = f"{deg:.1f}° ({grad_percent:.1f}%)"
                         mid_nm = (float(p1.get('distance_nm',0)) + float(p2.get('distance_nm',0)))/2.0
-                        mid_ft = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + 80.0
+                        # Keep visual offset roughly constant despite VE
+                        mid_ft = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + (80.0/ve)
                         pos = geometry.calculate_profile_point(mid_nm, mid_ft)
                         if layer_label:
                             lf = QgsFeature(layer_label.fields())
@@ -1175,8 +1118,8 @@ class LayerManager:
                 if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
                     try:
                         bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # full height approx: 3000 m
-                        topm = 3000.0
+                        # full height approx: 3000 m displayed; divide by VE in raw meters
+                        topm = 3000.0/ve
                         top = QgsPointXY(bottom.x(), bottom.y() + topm)
                         if self.layers.get(self.LAYER_KEY_VLINES):
                             lyr = self.layers[self.LAYER_KEY_VLINES]
@@ -1203,9 +1146,10 @@ class LayerManager:
                     max_distance_nm = axis_max
             except Exception:
                 pass
-            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=200)
+            # Maintain visual sizes independent of VE by dividing base by VE
+            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(200.0/ve))
             # Additionally, prepare full-height gridlines at each NM
-            grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=3000)
+            grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
 
             # Prepare baseline feature (horizontal at y=0 from 0..max distance)
             baseline_layer = self.layers.get(self.LAYER_BASELINE)
@@ -1234,13 +1178,12 @@ class LayerManager:
             # Axis labels under baseline at each NM
             if layer_label:
                 try:
-                    reverse_axis = bool(style.get('axis_reverse_labels', False))
                     for i in range(int(max_distance_nm) + 1):
-                        # place slightly below baseline (~60 ft)
-                        pos = geometry.calculate_profile_point(i, -60.0)
+                        # place slightly below baseline (~60 ft visual); divide by VE
+                        pos = geometry.calculate_profile_point(i, -(60.0/ve))
                         feat = QgsFeature(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
-                        label_txt = str(int(max_distance_nm) - i) if reverse_axis else str(i)
+                        label_txt = str(i)
                         feat.setAttributes([label_txt, "axis", 0.0, 9])
                         label_features.append(feat)
                     print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels")
@@ -1499,7 +1442,8 @@ class LayerManager:
                         max_distance_nm = axis_max
                 except Exception:
                     pass
-                grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=3000)
+                # Keep grid visual height approx 1500 m regardless of VE
+                grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
                 grid_features = []
                 for marker in grid_markers:
                     bottom, top = marker['geometry']
@@ -1596,20 +1540,7 @@ class LayerManager:
             self.iface.mapCanvas().refresh()
             print(f"PLUGIN qAeroChart: ✅ Auto-zoomed to profile extent")
 
-            # Optional: Normalize canvas scale for consistent visibility (inspired by qOLS/TOFPA)
-            try:
-                canvas = self.iface.mapCanvas()
-                current_scale = canvas.scale()
-                style = config.get('style', {}) if config else {}
-                # View scale hint can be customized via JSON; default chosen for comfortable view of small profiles
-                view_scale_hint = float(style.get('view_scale_hint', 12000))
-                enforce_view_scale = bool(style.get('enforce_view_scale', True))
-
-                if enforce_view_scale and current_scale > view_scale_hint:
-                    canvas.zoomScale(view_scale_hint)
-                    print(f"PLUGIN qAeroChart: 🔎 Applied view scale hint to {view_scale_hint}")
-            except Exception as e:
-                print(f"PLUGIN qAeroChart WARNING: Could not apply view scale hint: {e}")
+            # View scale enforcement removed (Issue #9)
 
         print("PLUGIN qAeroChart: === LAYER POPULATION COMPLETE ===")
         self._dbg("Finished populate_layers_from_config()")

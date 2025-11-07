@@ -114,246 +114,35 @@
    <item>
     <widget class="QGroupBox" name="groupBox_style">
      <property name="title">
-      <string>Style Parameters</string>
+      <string>Axis</string>
      </property>
      <layout class="QGridLayout" name="gridLayout_style">
       <property name="verticalSpacing">
        <number>4</number>
       </property>
       <item row="0" column="0">
-       <widget class="QLabel" name="label_line_width">
-        <property name="text">
-         <string>Line Width (mm):</string>
-        </property>
-       </widget>
+        <widget class="QLabel" name="label_axis_max_nm">
+          <property name="text">
+            <string>Axis max (NM):</string>
+          </property>
+        </widget>
       </item>
       <item row="0" column="1">
-       <widget class="QDoubleSpinBox" name="spinBox_line_width">
-        <property name="minimum">
-         <double>0.100000000000000</double>
-        </property>
-        <property name="maximum">
-         <double>10.000000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>0.500000000000000</double>
-        </property>
-        <property name="value">
-         <double>2.000000000000000</double>
-        </property>
-       </widget>
+        <widget class="QDoubleSpinBox" name="spinBox_axis_max_nm">
+          <property name="minimum">
+            <double>1.000000000000000</double>
+          </property>
+          <property name="maximum">
+            <double>100.000000000000000</double>
+          </property>
+          <property name="singleStep">
+            <double>0.500000000000000</double>
+          </property>
+          <property name="value">
+            <double>12.000000000000000</double>
+          </property>
+        </widget>
       </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="label_moca_border">
-        <property name="text">
-         <string>MOCA Border (mm):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QDoubleSpinBox" name="spinBox_moca_border">
-        <property name="minimum">
-         <double>0.100000000000000</double>
-        </property>
-        <property name="maximum">
-         <double>10.000000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>0.500000000000000</double>
-        </property>
-        <property name="value">
-         <double>1.000000000000000</double>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label_point_size">
-        <property name="text">
-         <string>Point Size (mm):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QDoubleSpinBox" name="spinBox_point_size">
-        <property name="minimum">
-         <double>1.000000000000000</double>
-        </property>
-        <property name="maximum">
-         <double>20.000000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>1.000000000000000</double>
-        </property>
-        <property name="value">
-         <double>5.000000000000000</double>
-        </property>
-       </widget>
-      </item>
-         <item row="3" column="0" colspan="2">
-            <widget class="QCheckBox" name="checkBox_axis_reverse_labels">
-             <property name="text">
-                <string>Reverse axis labels (e.g., 12 → 0)</string>
-             </property>
-             <property name="checked">
-                <bool>true</bool>
-             </property>
-            </widget>
-         </item>
-         <item row="4" column="0">
-            <widget class="QLabel" name="label_axis_max_nm">
-             <property name="text">
-                <string>Axis max (NM):</string>
-             </property>
-            </widget>
-         </item>
-         <item row="4" column="1">
-            <widget class="QDoubleSpinBox" name="spinBox_axis_max_nm">
-             <property name="minimum">
-                <double>1.000000000000000</double>
-             </property>
-             <property name="maximum">
-                <double>100.000000000000000</double>
-             </property>
-             <property name="singleStep">
-                <double>0.500000000000000</double>
-             </property>
-             <property name="value">
-                <double>12.000000000000000</double>
-             </property>
-            </widget>
-         </item>
-     <item row="5" column="0" colspan="2">
-      <widget class="QCheckBox" name="checkBox_use_map_units">
-       <property name="text">
-        <string>Use map units (meters) for line widths</string>
-       </property>
-       <property name="checked">
-        <bool>false</bool>
-       </property>
-      </widget>
-     </item>
-         <item row="6" column="0">
-      <widget class="QLabel" name="label_line_width_mu">
-       <property name="text">
-        <string>Main Line Width (m):</string>
-       </property>
-      </widget>
-     </item>
-         <item row="6" column="1">
-      <widget class="QDoubleSpinBox" name="spinBox_line_width_mu">
-       <property name="minimum">
-        <double>1.000000000000000</double>
-       </property>
-       <property name="maximum">
-        <double>1000.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>5.000000000000000</double>
-       </property>
-       <property name="value">
-        <double>30.000000000000000</double>
-       </property>
-      </widget>
-     </item>
-         <item row="7" column="0">
-      <widget class="QLabel" name="label_runway_width_mu">
-       <property name="text">
-        <string>Runway Line Width (m):</string>
-       </property>
-      </widget>
-     </item>
-         <item row="7" column="1">
-      <widget class="QDoubleSpinBox" name="spinBox_runway_width_mu">
-       <property name="minimum">
-        <double>1.000000000000000</double>
-       </property>
-       <property name="maximum">
-        <double>1000.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>5.000000000000000</double>
-       </property>
-       <property name="value">
-        <double>50.000000000000000</double>
-       </property>
-      </widget>
-     </item>
-         <item row="8" column="0">
-      <widget class="QLabel" name="label_dist_width_mu">
-       <property name="text">
-        <string>Tick Width (m):</string>
-       </property>
-      </widget>
-     </item>
-         <item row="8" column="1">
-      <widget class="QDoubleSpinBox" name="spinBox_dist_width_mu">
-       <property name="minimum">
-        <double>1.000000000000000</double>
-       </property>
-       <property name="maximum">
-        <double>1000.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>5.000000000000000</double>
-       </property>
-       <property name="value">
-        <double>15.000000000000000</double>
-       </property>
-      </widget>
-     </item>
-        <item row="9" column="0">
-     <widget class="QLabel" name="label_view_scale_hint">
-      <property name="text">
-       <string>View Scale Hint (1:)</string>
-      </property>
-     </widget>
-    </item>
-        <item row="9" column="1">
-     <widget class="QSpinBox" name="spinBox_view_scale_hint">
-      <property name="minimum">
-       <number>1000</number>
-      </property>
-      <property name="maximum">
-       <number>200000</number>
-      </property>
-      <property name="singleStep">
-       <number>500</number>
-      </property>
-      <property name="value">
-       <number>12000</number>
-      </property>
-     </widget>
-    </item>
-        <item row="10" column="0" colspan="2">
-     <widget class="QCheckBox" name="checkBox_enforce_view_scale">
-      <property name="text">
-       <string>Enforce View Scale</string>
-      </property>
-      <property name="checked">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-        <item row="11" column="0" colspan="2">
-         <widget class="QCheckBox" name="checkBox_show_origin">
-            <property name="text">
-             <string>Show ORIGIN marker</string>
-            </property>
-            <property name="checked">
-             <bool>false</bool>
-            </property>
-         </widget>
-        </item>
-        <item row="12" column="0" colspan="2">
-         <widget class="QCheckBox" name="checkBox_show_point_symbols">
-            <property name="text">
-             <string>Show point symbols</string>
-            </property>
-            <property name="checked">
-             <bool>false</bool>
-            </property>
-         </widget>
-        </item>
      </layout>
     </widget>
    </item>

@@ -33,21 +33,21 @@ class ProfileChartGeometry:
     # Vertical: Use REAL altitudes in meters (no scaling)
     # The "320 ft/NM" is achieved by the natural proportions, not artificial scaling
     
-    # No scaling - use real metric coordinates
-    HORIZONTAL_SCALE = 1.0  # 1:1 - real distance
-    VERTICAL_SCALE = 1.0    # 1:1 - real altitude
-    
-    def __init__(self, origin_point):
+    def __init__(self, origin_point, vertical_exaggeration: float = 10.0):
         """
         Initialize the geometry calculator with cartesian coordinate system.
         
         Args:
             origin_point (QgsPointXY): Origin point where chart will be drawn
+            vertical_exaggeration (float): Factor to exaggerate vertical distances
         """
         self.origin = origin_point
+        # Scales (horizontal kept at 1:1; vertical exaggerated per requirement)
+        self.horizontal_scale = 1.0
+        self.vertical_exaggeration = max(1.0, float(vertical_exaggeration or 10.0))
         
         print(f"PLUGIN qAeroChart: ProfileChartGeometry initialized at origin "
-              f"X={origin_point.x():.2f}, Y={origin_point.y():.2f} (Cartesian mode)")
+              f"X={origin_point.x():.2f}, Y={origin_point.y():.2f} (Cartesian mode, VE={self.vertical_exaggeration}x)")
     
     def nm_to_meters(self, nautical_miles):
         """
@@ -76,8 +76,8 @@ class ProfileChartGeometry:
         elevation_m = elevation_ft * self.FT_TO_METERS
         
         # Apply both horizontal and vertical scaling
-        scaled_distance_m = distance_m * self.HORIZONTAL_SCALE
-        scaled_elevation_m = elevation_m * self.VERTICAL_SCALE
+        scaled_distance_m = distance_m * self.horizontal_scale
+        scaled_elevation_m = elevation_m * self.vertical_exaggeration
         
         result_point = QgsPointXY(
             self.origin.x() + scaled_distance_m,
@@ -90,30 +90,36 @@ class ProfileChartGeometry:
         
         return result_point
     
-    def create_runway_line(self, length_m, tch_m):
+    def create_runway_line(self, length_m, _tch_m_unused=0.0):
         """
         Create the runway line geometry in cartesian coordinates.
-        
-        The runway is drawn horizontally at ground level (Y = TCH * scale).
-        
+
+        Specification (Issue #6):
+        - The origin (0 NM) is the THR (start of runway) for the profile chart.
+        - The runway distance must be drawn on the opposite side of the profile
+          axis (i.e., negative direction from the origin), so that distances
+          0→N NM extend AWAY from the runway.
+        - The runway lies on the baseline (Y = 0), not at TCH.
+
         Args:
             length_m (float): Runway length in meters
-            tch_m (float): Threshold Crossing Height in meters
-        
+            _tch_m_unused (float): Deprecated. Kept for signature compatibility.
+
         Returns:
             list[QgsPointXY]: Two points defining the runway line
         """
-        # Apply scales to both dimensions
-        scaled_tch = tch_m * self.VERTICAL_SCALE
-        scaled_length = length_m * self.HORIZONTAL_SCALE
-        
-        # Runway at origin (X=0) to runway length (X=scaled_length)
-        start = QgsPointXY(self.origin.x(), self.origin.y() + scaled_tch)
-        end = QgsPointXY(self.origin.x() + scaled_length, self.origin.y() + scaled_tch)
-        
-        print(f"PLUGIN qAeroChart: Runway line created - Length: {length_m}m→{scaled_length:.2f}m, "
-              f"TCH: {tch_m}m→{scaled_tch:.2f}m")
-        
+        # Apply horizontal scale. Vertical is baseline (0)
+        scaled_length = length_m * self.horizontal_scale
+
+        # Draw from (origin - length) → origin at Y = baseline
+        y = self.origin.y()  # baseline (0 elevation)
+        start = QgsPointXY(self.origin.x() - scaled_length, y)
+        end = QgsPointXY(self.origin.x(), y)
+
+        print(
+            f"PLUGIN qAeroChart: Runway line created (left of origin) - Length: {length_m}m→{scaled_length:.2f}m, Y=baseline"
+        )
+
         return [start, end]
     
     def create_profile_line(self, profile_points):
@@ -163,17 +169,17 @@ class ProfileChartGeometry:
         """
         markers = []
         
-        scaled_marker_height = marker_height_m * self.VERTICAL_SCALE
+        scaled_marker_height = marker_height_m * self.vertical_exaggeration
         
-        # Create marker for each nautical mile
+    # Create marker for each nautical mile
         for i in range(int(max_distance_nm) + 1):
             distance_m = self.nm_to_meters(i)
-            scaled_distance = distance_m * self.HORIZONTAL_SCALE
+            scaled_distance = distance_m * self.horizontal_scale
             x_position = self.origin.x() + scaled_distance
             
-            # Marker line from ground to marker height
-            bottom = QgsPointXY(x_position, self.origin.y())
-            top = QgsPointXY(x_position, self.origin.y() + scaled_marker_height)
+            # Marker line drawn DOWNWARD from baseline (to match eAIP style)
+            bottom = QgsPointXY(x_position, self.origin.y())  # baseline
+            top = QgsPointXY(x_position, self.origin.y() - scaled_marker_height)
             
             markers.append({
                 'distance': i,
@@ -197,10 +203,11 @@ class ProfileChartGeometry:
         Returns:
             list[QgsPointXY]: Two points defining the vertical line
         """
-        x_position = self.origin.x() + self.nm_to_meters(distance_nm)
+        # Apply horizontal scale for distance and vertical exaggeration for height
+        x_position = self.origin.x() + (self.nm_to_meters(distance_nm) * self.horizontal_scale)
         
         bottom = QgsPointXY(x_position, self.origin.y())
-        top = QgsPointXY(x_position, self.origin.y() + height_m)
+        top = QgsPointXY(x_position, self.origin.y() + (height_m * self.vertical_exaggeration))
         
         return [bottom, top]
     
@@ -224,9 +231,9 @@ class ProfileChartGeometry:
         height_m = height_ft * self.FT_TO_METERS
         
         # Apply both scales
-        scaled_start = start_m * self.HORIZONTAL_SCALE
-        scaled_end = end_m * self.HORIZONTAL_SCALE
-        scaled_height = height_m * self.VERTICAL_SCALE
+        scaled_start = start_m * self.horizontal_scale
+        scaled_end = end_m * self.horizontal_scale
+        scaled_height = height_m * self.vertical_exaggeration
         
         # Create polygon vertices (clockwise)
         bottom_left = QgsPointXY(self.origin.x() + scaled_start, self.origin.y())

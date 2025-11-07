@@ -1,8 +1,8 @@
 # 🚀 qAeroChart
 
- Opensource aeronautical charting solution built on QGIS aimed at complying with ICAO SARPs, reimagining aeronautical charting with open-source power and QGIS precision.
+Opensource aeronautical charting solution built on QGIS aimed at complying with ICAO SARPs, reimagining aeronautical charting with open-source power and QGIS precision.
 
-***✈️ Built on QGIS. Designed to outfly legacy.***
+**_✈️ Built on QGIS. Designed to outfly legacy._**
 
 💡 Value Proposition
 
@@ -14,8 +14,28 @@ You’ll harness the power of QGIS and ICAO-compliant aeronautical mapping to bu
 
 💸 No more licensing fees, no more annual subscriptions—qAeroChart will give you the freedom to innovate without the constraints.
 
-📦 What will it contain?  
-* qAeroCore – shared libraries  
-* qAeroTools – utilities  
-* qAeroWeb – web-based viewer  
-* qAeroCloud – cloud sync services  
+📦 What will it contain?
+
+- qAeroCore – shared libraries
+- qAeroTools – utilities
+- qAeroWeb – web-based viewer
+- qAeroCloud – cloud sync services
+
+## PR documentation policy
+
+PR documentation files under `docs/` are only required when both conditions apply:
+
+- The PR fixes a user-requested/assigned issue (for example: “Vertical Scale is not 10× exaggerated #7”), or the maintainer explicitly requests documentation; and
+- The change benefits from a short test plan and acceptance criteria for reviewers.
+
+When required, use these naming conventions:
+
+- English: `docs/PR-issue-<number>-en.md`
+- Spanish: `docs/PR-issue-<number>-es.md` (add if bilingual docs are requested)
+
+Each PR doc should include: Summary, Changes, How to Test, Acceptance Criteria, Risks, Documentation Updates, and Screenshots (if applicable).
+
+Templates are available:
+
+- `docs/PR-template-en.md`
+- `docs/PR-template-es.md`

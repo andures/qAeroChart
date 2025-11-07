@@ -2,5 +2,8 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
-# Ignore PR markdown drafts in docs/
+# Ignore entire docs directory (requested)
+/docs/
+
+# (Redundant) Ignore PR markdown drafts in docs/
 docs/PR-issue-*.md

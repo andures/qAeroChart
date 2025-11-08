@@ -2,7 +2,5 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
-# Ignore docs assets by default, but allow Markdown files
-/docs/*
-!/docs/*.md
-!/docs/**/*.md
+# Ignore entire docs directory (all files)
+/docs/

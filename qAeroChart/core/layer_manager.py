@@ -47,7 +47,6 @@ class LayerManager:
     LAYER_DIST = "profile_dist"
     LAYER_MOCA = "profile_MOCA"
     LAYER_BASELINE = "profile_baseline"
-    LAYER_GRID = "profile_grid"
     LAYER_KEY_VLINES = "profile_key_verticals"
     
     # Group name
@@ -171,9 +170,8 @@ class LayerManager:
         self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
         self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
         self.layers[self.LAYER_LINE] = self._create_line_layer()
-        # New supportive layers: horizontal baseline and vertical grid
+        # New supportive layers: horizontal baseline
         self.layers[self.LAYER_BASELINE] = self._create_named_line_layer(self.LAYER_BASELINE)
-        self.layers[self.LAYER_GRID] = self._create_dist_layer_for_grid()
         self.layers[self.LAYER_KEY_VLINES] = self._create_named_line_layer(self.LAYER_KEY_VLINES)
         self.layers[self.LAYER_DIST] = self._create_dist_layer()
         self.layers[self.LAYER_MOCA] = self._create_moca_layer()
@@ -357,17 +355,6 @@ class LayerManager:
         
         return layer
 
-    def _create_dist_layer_for_grid(self):
-        """Create a LineString layer to hold full-height vertical gridlines."""
-        uri = f"LineString?crs={self.crs.authid()}"
-        layer = QgsVectorLayer(uri, self.LAYER_GRID, "memory")
-        provider = layer.dataProvider()
-        provider.addAttributes([
-            QgsField("distance", QVariant.Double),
-            QgsField("marker_type", QVariant.String, len=30)
-        ])
-        layer.updateFields()
-        return layer
     
     def _create_moca_layer(self):
         """
@@ -414,7 +401,6 @@ class LayerManager:
         layer_order = [
             self.LAYER_CARTO_LABEL,
             self.LAYER_POINT_SYMBOL,
-            self.LAYER_GRID,
             self.LAYER_BASELINE,
             self.LAYER_KEY_VLINES,
             self.LAYER_DIST,
@@ -621,29 +607,6 @@ class LayerManager:
             baseline_layer.triggerRepaint()
             print("PLUGIN qAeroChart: Applied style to profile_baseline (solid black)")
 
-        # Style for GRID - light gray dashed verticals
-        grid_layer = self.layers.get(self.LAYER_GRID)
-        if grid_layer:
-            gl = QgsSimpleLineSymbolLayer()
-            gl.setColor(QColor(180, 180, 180))
-            try:
-                gl.setCapStyle(Qt.FlatCap)
-                gl.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            gl.setWidth(0.2)
-            gl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            try:
-                # Simple dashed appearance
-                from qgis.PyQt.QtCore import Qt as QtCoreQt
-                gl.setPenStyle(QtCoreQt.DashLine)
-            except Exception:
-                pass
-            grid_symbol = QgsLineSymbol()
-            grid_symbol.appendSymbolLayer(gl)
-            grid_layer.setRenderer(QgsSingleSymbolRenderer(grid_symbol))
-            grid_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied style to profile_grid (dashed gray verticals)")
         
         
         # Style for CARTO_LABEL - Configure text labels
@@ -1085,8 +1048,6 @@ class LayerManager:
                 tick_visual_height_m = 200.0
             tick_height_m = tick_visual_height_m / ve
             markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=tick_height_m)
-            # Additionally, prepare full-height gridlines at each NM
-            grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
 
             # Prepare baseline feature (horizontal at y=0 from 0..max distance)
             baseline_layer = self.layers.get(self.LAYER_BASELINE)
@@ -1129,8 +1090,7 @@ class LayerManager:
                     print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline")
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create axis labels: {e}")
-            # Prepare count for GRID (full-height verticals); features will be added in batch section
-            print(f"PLUGIN qAeroChart: Prepared {len(grid_markers)} grid lines")
+            # Grid layer removed (Issue #14): skipping creation of full-height vertical grid lines
         
     # 6. Prepare MOCA polygons
         print(f"PLUGIN qAeroChart: === CREATING MOCA/OCA HATCH AREAS ===")
@@ -1369,35 +1329,6 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: ✅ Added {len(dist_features)} distance markers (success={success})")
             self._dbg(f"Dist layer now has {layer_dist.featureCount()} features")
 
-        # Add GRID features (full-height dashed verticals)
-        layer_grid = self.layers.get(self.LAYER_GRID)
-        if layer_grid:
-            # Rebuild grid features to ensure we didn't just prepare without adding
-            if profile_points:
-                max_distance_nm = max(float(p.get('distance_nm', 0)) for p in profile_points)
-                # Respect axis_max_nm from style if provided
-                try:
-                    axis_max = float(style.get('axis_max_nm', max_distance_nm))
-                    if axis_max > max_distance_nm:
-                        max_distance_nm = axis_max
-                except Exception:
-                    pass
-                # Keep grid visual height approx 1500 m regardless of VE
-                grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
-                grid_features = []
-                for marker in grid_markers:
-                    bottom, top = marker['geometry']
-                    feat = QgsFeature(layer_grid.fields())
-                    feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                    feat.setAttributes([marker['distance'], 'grid'])
-                    grid_features.append(feat)
-                if grid_features:
-                    layer_grid.startEditing()
-                    success = layer_grid.addFeatures(grid_features)
-                    layer_grid.commitChanges()
-                    layer_grid.updateExtents()
-                    layer_grid.triggerRepaint()
-                    print(f"PLUGIN qAeroChart: ✅ Added {len(grid_features)} grid lines")
 
 
         # Add KEY VERTICALS features

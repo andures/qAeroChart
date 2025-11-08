@@ -44,8 +44,6 @@ class LayerManager:
     LAYER_POINT_SYMBOL = "profile_point_symbol"
     LAYER_CARTO_LABEL = "profile_carto_label"
     LAYER_LINE = "profile_line"
-    LAYER_LINE_FINAL = "profile_line_final"
-    LAYER_LINE_RUNWAY = "profile_line_runway"
     LAYER_DIST = "profile_dist"
     LAYER_MOCA = "profile_MOCA"
     LAYER_BASELINE = "profile_baseline"
@@ -142,9 +140,6 @@ class LayerManager:
         self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
         self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
         self.layers[self.LAYER_LINE] = self._create_line_layer()
-        # Additional simple line layers to guarantee visibility
-        self.layers[self.LAYER_LINE_FINAL] = self._create_named_line_layer(self.LAYER_LINE_FINAL)
-        self.layers[self.LAYER_LINE_RUNWAY] = self._create_named_line_layer(self.LAYER_LINE_RUNWAY)
         # New supportive layers: horizontal baseline and vertical grid
         self.layers[self.LAYER_BASELINE] = self._create_named_line_layer(self.LAYER_BASELINE)
         self.layers[self.LAYER_GRID] = self._create_dist_layer_for_grid()
@@ -408,21 +403,6 @@ class LayerManager:
                     self._dbg(f"  -> layer '{layer_name}' valid={layer.isValid()} count={layer.featureCount()} extent={[layer.extent().xMinimum(), layer.extent().yMinimum(), layer.extent().xMaximum(), layer.extent().yMaximum()]}")
                 except Exception:
                     pass
-
-        # Create a subgroup for simple line layers (final/runway) to mirror other plugins' structure
-        simple_group = self.layer_group.addGroup("profile_line")
-        for name in [self.LAYER_LINE_FINAL, self.LAYER_LINE_RUNWAY]:
-            lyr = self.layers.get(name)
-            if lyr:
-                # add to project if not already
-                if lyr not in self.project.mapLayers().values():
-                    self.project.addMapLayer(lyr, False)
-                simple_group.addLayer(lyr)
-                print(f"PLUGIN qAeroChart: Added '{name}' into subgroup 'profile_line'")
-                try:
-                    self._dbg(f"  -> subgroup '{name}' valid={lyr.isValid()} count={lyr.featureCount()}")
-                except Exception:
-                    pass
         
         # Apply basic styles to make features visible
         self._apply_basic_styles(config)
@@ -501,56 +481,6 @@ class LayerManager:
             line_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             line_layer.triggerRepaint()
             print(f"PLUGIN qAeroChart: Applied style to profile_line ({line_color}, {line_width}mm)")
-
-        # Style for simple 'final' line layer
-        final_layer = self.layers.get(self.LAYER_LINE_FINAL)
-        if final_layer:
-            core = QgsSimpleLineSymbolLayer()
-            core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer()
-            casing.setColor(QColor(255, 255, 255))
-            try:
-                core.setCapStyle(Qt.FlatCap)
-                core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap)
-                casing.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            core.setWidth(line_width)
-            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(line_width * 1.6)
-            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            symbol = QgsLineSymbol()
-            symbol.appendSymbolLayer(casing)
-            symbol.appendSymbolLayer(core)
-            final_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
-            final_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_FINAL} ({line_color}, {line_width}mm)")
-
-        # Style for simple 'runway' line layer (slightly thicker)
-        runway_layer_simple = self.layers.get(self.LAYER_LINE_RUNWAY)
-        if runway_layer_simple:
-            core = QgsSimpleLineSymbolLayer()
-            core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer()
-            casing.setColor(QColor(255, 255, 255))
-            try:
-                core.setCapStyle(Qt.FlatCap)
-                core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap)
-                casing.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            core.setWidth(max(line_width, 3.0))
-            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(max(line_width, 3.0) * 1.6)
-            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            symbol = QgsLineSymbol()
-            symbol.appendSymbolLayer(casing)
-            symbol.appendSymbolLayer(core)
-            runway_layer_simple.setRenderer(QgsSingleSymbolRenderer(symbol))
-            runway_layer_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_RUNWAY} ({line_color}, {max(line_width,3.0)}mm)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
@@ -954,8 +884,6 @@ class LayerManager:
         point_features = []
         label_features = []
         line_features = []
-        simple_final_features = []
-        simple_runway_features = []
         dist_features = []
         moca_features = []
         baseline_features = []
@@ -965,8 +893,6 @@ class LayerManager:
         layer_point = self.layers.get(self.LAYER_POINT_SYMBOL)
         layer_label = self.layers.get(self.LAYER_CARTO_LABEL)
         layer_line = self.layers.get(self.LAYER_LINE)
-        layer_final_simple = self.layers.get(self.LAYER_LINE_FINAL)
-        layer_runway_simple = self.layers.get(self.LAYER_LINE_RUNWAY)
         layer_dist = self.layers.get(self.LAYER_DIST)
         layer_moca = self.layers.get(self.LAYER_MOCA)
         
@@ -1024,12 +950,6 @@ class LayerManager:
                             label_features.append(lf)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create slope labels: {e}")
-                # also prepare feature for simple final layer
-                if layer_final_simple:
-                    feat_final = QgsFeature(layer_final_simple.fields())
-                    feat_final.setGeometry(QgsGeometry.fromPolylineXY(line_points))
-                    feat_final.setAttributes(["final", "Main Profile", 0.0])
-                    simple_final_features.append(feat_final)
             else:
                 print(f"PLUGIN qAeroChart: ❌ Profile line NOT created (line_points={bool(line_points)}, layer_line={bool(layer_line)})")
         else:
@@ -1060,12 +980,6 @@ class LayerManager:
                 feat.setAttributes(["runway", "Runway", 0.0])
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
-                # also prepare feature for simple runway layer
-                if layer_runway_simple:
-                    feat_rwy = QgsFeature(layer_runway_simple.fields())
-                    feat_rwy.setGeometry(QgsGeometry.fromPolylineXY(runway_points))
-                    feat_rwy.setAttributes(["runway", "Runway", 0.0])
-                    simple_runway_features.append(feat_rwy)
             else:
                 print(f"PLUGIN qAeroChart: ❌ Runway line NOT created")
         else:
@@ -1328,7 +1242,7 @@ class LayerManager:
         
         # BATCH ADD: Add all features in bulk (single edit cycle per layer)
         print(f"PLUGIN qAeroChart: === BATCH ADDING FEATURES ===")
-        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, SimpleFinal: {len(simple_final_features)}, SimpleRunway: {len(simple_runway_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
+        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
         
         if point_features and layer_point:
             layer_point.startEditing()
@@ -1442,24 +1356,6 @@ class LayerManager:
                     layer_grid.triggerRepaint()
                     print(f"PLUGIN qAeroChart: ✅ Added {len(grid_features)} grid lines")
 
-        # Add simple line layers as a robust visual fallback and to match expected structure
-        if simple_final_features and layer_final_simple:
-            layer_final_simple.startEditing()
-            success = layer_final_simple.addFeatures(simple_final_features)
-            layer_final_simple.commitChanges()
-            layer_final_simple.updateExtents()
-            layer_final_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(simple_final_features)} features to {self.LAYER_LINE_FINAL}")
-            self._dbg(f"{self.LAYER_LINE_FINAL} now has {layer_final_simple.featureCount()} features")
-
-        if simple_runway_features and layer_runway_simple:
-            layer_runway_simple.startEditing()
-            success = layer_runway_simple.addFeatures(simple_runway_features)
-            layer_runway_simple.commitChanges()
-            layer_runway_simple.updateExtents()
-            layer_runway_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(simple_runway_features)} features to {self.LAYER_LINE_RUNWAY}")
-            self._dbg(f"{self.LAYER_LINE_RUNWAY} now has {layer_runway_simple.featureCount()} features")
 
         # Add KEY VERTICALS features
         key_v_layer = self.layers.get(self.LAYER_KEY_VLINES)

@@ -44,12 +44,9 @@ class LayerManager:
     LAYER_POINT_SYMBOL = "profile_point_symbol"
     LAYER_CARTO_LABEL = "profile_carto_label"
     LAYER_LINE = "profile_line"
-    LAYER_LINE_FINAL = "profile_line_final"
-    LAYER_LINE_RUNWAY = "profile_line_runway"
     LAYER_DIST = "profile_dist"
     LAYER_MOCA = "profile_MOCA"
     LAYER_BASELINE = "profile_baseline"
-    LAYER_GRID = "profile_grid"
     LAYER_KEY_VLINES = "profile_key_verticals"
     
     # Group name
@@ -66,10 +63,15 @@ class LayerManager:
         self.iface = iface
         self.project = QgsProject.instance()
         
-        # Use project CRS if not specified
-        if crs is None:
-            self.crs = self.project.crs()
-        else:
+        # Always use the project CRS for layer creation (Issue #13)
+        # If a different CRS is passed in, log and override to project CRS to guarantee consistency.
+        try:
+            project_crs = self.project.crs()
+            if crs is not None and project_crs.isValid() and crs != project_crs:
+                print(f"[qAeroChart][WARN] Overriding provided CRS {crs.authid()} with project CRS {project_crs.authid()} for consistency")
+            self.crs = project_crs
+        except Exception:
+            # Fallback: if project CRS not available, use provided, else leave unset (will be caught by guards)
             self.crs = crs
         
         # Debug flag (can be overridden by config in create_all_layers)
@@ -95,24 +97,47 @@ class LayerManager:
         if self.debug:
             self._log(message, level="DEBUG")
 
-    def _crs_guard(self):
-        """Warn if using a geographic CRS (degrees) which breaks metric profile drawing."""
+    def _crs_guard(self, *, enforce_block=False):
+        """
+        Check CRS suitability.
+        - If geographic CRS (degrees), optionally block further actions per Issue #13.
+        - Always inform user via message bar.
+        
+        Args:
+            enforce_block (bool): When True, show a red error and signal caller to abort.
+        
+        Returns:
+            bool: True if CRS is acceptable (projected), False if geographic and enforce_block requested.
+        """
         try:
-            if self.crs.isGeographic():
+            current_crs = self.project.crs() if self.project else self.crs
+            if current_crs is None or not current_crs.isValid():
+                msg = "Project CRS is not set or invalid. Set a projected CRS (meters) before creating a profile."
+                self._log(msg, level="WARN")
+                try:
+                    if self.iface:
+                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
+                except Exception:
+                    pass
+                return False if enforce_block else True
+
+            if current_crs.isGeographic():
                 msg = (
-                    f"Project CRS {self.crs.authid()} is geographic (degrees). "
-                    "Use a projected CRS (meters) for correct distances/altitudes."
+                    f"Project CRS {current_crs.authid()} is geographic (degrees). "
+                    "Set a projected CRS (meters) and retry. Profile creation is blocked (Issue #13)."
                 )
                 self._log(msg, level="WARN")
                 try:
                     if self.iface:
-                        self.iface.messageBar().pushMessage(
-                            "qAeroChart", msg, level=Qgis.Warning, duration=6
-                        )
+                        # Red bar
+                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
                 except Exception:
                     pass
+                return False if enforce_block else True
+            return True
         except Exception as e:
             self._log(f"CRS guard check failed: {e}", level="WARN")
+            return True
     
     def create_all_layers(self, config=None):
         """
@@ -133,7 +158,10 @@ class LayerManager:
 
         self._dbg("Starting create_all_layers()")
         print("PLUGIN qAeroChart: Creating all profile layers...")
-        self._crs_guard()
+        # Enforce projected CRS; block if geographic (Issue #13)
+        if not self._crs_guard(enforce_block=True):
+            self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
+            return {}
         
         # Create group first
         self._create_layer_group()
@@ -142,12 +170,8 @@ class LayerManager:
         self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
         self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
         self.layers[self.LAYER_LINE] = self._create_line_layer()
-        # Additional simple line layers to guarantee visibility
-        self.layers[self.LAYER_LINE_FINAL] = self._create_named_line_layer(self.LAYER_LINE_FINAL)
-        self.layers[self.LAYER_LINE_RUNWAY] = self._create_named_line_layer(self.LAYER_LINE_RUNWAY)
-        # New supportive layers: horizontal baseline and vertical grid
+        # New supportive layers: horizontal baseline
         self.layers[self.LAYER_BASELINE] = self._create_named_line_layer(self.LAYER_BASELINE)
-        self.layers[self.LAYER_GRID] = self._create_dist_layer_for_grid()
         self.layers[self.LAYER_KEY_VLINES] = self._create_named_line_layer(self.LAYER_KEY_VLINES)
         self.layers[self.LAYER_DIST] = self._create_dist_layer()
         self.layers[self.LAYER_MOCA] = self._create_moca_layer()
@@ -331,17 +355,6 @@ class LayerManager:
         
         return layer
 
-    def _create_dist_layer_for_grid(self):
-        """Create a LineString layer to hold full-height vertical gridlines."""
-        uri = f"LineString?crs={self.crs.authid()}"
-        layer = QgsVectorLayer(uri, self.LAYER_GRID, "memory")
-        provider = layer.dataProvider()
-        provider.addAttributes([
-            QgsField("distance", QVariant.Double),
-            QgsField("marker_type", QVariant.String, len=30)
-        ])
-        layer.updateFields()
-        return layer
     
     def _create_moca_layer(self):
         """
@@ -388,7 +401,6 @@ class LayerManager:
         layer_order = [
             self.LAYER_CARTO_LABEL,
             self.LAYER_POINT_SYMBOL,
-            self.LAYER_GRID,
             self.LAYER_BASELINE,
             self.LAYER_KEY_VLINES,
             self.LAYER_DIST,
@@ -408,21 +420,6 @@ class LayerManager:
                     self._dbg(f"  -> layer '{layer_name}' valid={layer.isValid()} count={layer.featureCount()} extent={[layer.extent().xMinimum(), layer.extent().yMinimum(), layer.extent().xMaximum(), layer.extent().yMaximum()]}")
                 except Exception:
                     pass
-
-        # Create a subgroup for simple line layers (final/runway) to mirror other plugins' structure
-        simple_group = self.layer_group.addGroup("profile_line")
-        for name in [self.LAYER_LINE_FINAL, self.LAYER_LINE_RUNWAY]:
-            lyr = self.layers.get(name)
-            if lyr:
-                # add to project if not already
-                if lyr not in self.project.mapLayers().values():
-                    self.project.addMapLayer(lyr, False)
-                simple_group.addLayer(lyr)
-                print(f"PLUGIN qAeroChart: Added '{name}' into subgroup 'profile_line'")
-                try:
-                    self._dbg(f"  -> subgroup '{name}' valid={lyr.isValid()} count={lyr.featureCount()}")
-                except Exception:
-                    pass
         
         # Apply basic styles to make features visible
         self._apply_basic_styles(config)
@@ -433,31 +430,14 @@ class LayerManager:
         except Exception:
             pass
 
-        # Optionally promote render order so these layers are drawn above others
+        # WYSIWYG request (Issue #11): Disable any custom render ordering so the layer panel order controls drawing.
         try:
             root = self.project.layerTreeRoot()
-            # Build preferred order: our layers first (leaves only), then the rest
-            preferred = []
-            for name in [self.LAYER_MOCA, self.LAYER_GRID, self.LAYER_BASELINE, self.LAYER_KEY_VLINES, self.LAYER_DIST, self.LAYER_LINE_RUNWAY, self.LAYER_LINE_FINAL, self.LAYER_LINE, self.LAYER_POINT_SYMBOL, self.LAYER_CARTO_LABEL]:
-                lyr = self.layers.get(name)
-                if lyr:
-                    preferred.append(lyr)
-            current = [l for l in self.project.mapLayers().values() if l not in preferred]
-            new_order = preferred + current
-            # Methods differ slightly across QGIS versions; try both styles
-            try:
-                root.setCustomLayerOrder(new_order)
-                root.setHasCustomLayerOrder(True)
-                self._dbg("Applied custom layer order: profile group on top")
-            except Exception:
-                try:
-                    self.project.setCustomLayerOrder(new_order)
-                    self.project.setTopologicalEditing(False)  # harmless no-op hint for some versions
-                    self._dbg("Applied project custom layer order fallback")
-                except Exception:
-                    pass
+            if hasattr(root, 'hasCustomLayerOrder') and root.hasCustomLayerOrder():
+                root.setHasCustomLayerOrder(False)
+                self._dbg("Disabled custom layer order (WYSIWYG rendering order)")
         except Exception as e:
-            self._log(f"Could not promote custom layer order: {e}", level="WARN")
+            self._log(f"Could not disable custom layer order: {e}", level="WARN")
     
     def _apply_basic_styles(self, config=None):
         """
@@ -518,56 +498,6 @@ class LayerManager:
             line_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
             line_layer.triggerRepaint()
             print(f"PLUGIN qAeroChart: Applied style to profile_line ({line_color}, {line_width}mm)")
-
-        # Style for simple 'final' line layer
-        final_layer = self.layers.get(self.LAYER_LINE_FINAL)
-        if final_layer:
-            core = QgsSimpleLineSymbolLayer()
-            core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer()
-            casing.setColor(QColor(255, 255, 255))
-            try:
-                core.setCapStyle(Qt.FlatCap)
-                core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap)
-                casing.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            core.setWidth(line_width)
-            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(line_width * 1.6)
-            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            symbol = QgsLineSymbol()
-            symbol.appendSymbolLayer(casing)
-            symbol.appendSymbolLayer(core)
-            final_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
-            final_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_FINAL} ({line_color}, {line_width}mm)")
-
-        # Style for simple 'runway' line layer (slightly thicker)
-        runway_layer_simple = self.layers.get(self.LAYER_LINE_RUNWAY)
-        if runway_layer_simple:
-            core = QgsSimpleLineSymbolLayer()
-            core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer()
-            casing.setColor(QColor(255, 255, 255))
-            try:
-                core.setCapStyle(Qt.FlatCap)
-                core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap)
-                casing.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            core.setWidth(max(line_width, 3.0))
-            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(max(line_width, 3.0) * 1.6)
-            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            symbol = QgsLineSymbol()
-            symbol.appendSymbolLayer(casing)
-            symbol.appendSymbolLayer(core)
-            runway_layer_simple.setRenderer(QgsSingleSymbolRenderer(symbol))
-            runway_layer_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to {self.LAYER_LINE_RUNWAY} ({line_color}, {max(line_width,3.0)}mm)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
@@ -677,29 +607,6 @@ class LayerManager:
             baseline_layer.triggerRepaint()
             print("PLUGIN qAeroChart: Applied style to profile_baseline (solid black)")
 
-        # Style for GRID - light gray dashed verticals
-        grid_layer = self.layers.get(self.LAYER_GRID)
-        if grid_layer:
-            gl = QgsSimpleLineSymbolLayer()
-            gl.setColor(QColor(180, 180, 180))
-            try:
-                gl.setCapStyle(Qt.FlatCap)
-                gl.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            gl.setWidth(0.2)
-            gl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            try:
-                # Simple dashed appearance
-                from qgis.PyQt.QtCore import Qt as QtCoreQt
-                gl.setPenStyle(QtCoreQt.DashLine)
-            except Exception:
-                pass
-            grid_symbol = QgsLineSymbol()
-            grid_symbol.appendSymbolLayer(gl)
-            grid_layer.setRenderer(QgsSingleSymbolRenderer(grid_symbol))
-            grid_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied style to profile_grid (dashed gray verticals)")
         
         
         # Style for CARTO_LABEL - Configure text labels
@@ -936,7 +843,10 @@ class LayerManager:
         self._dbg("Starting populate_layers_from_config()")
         print("PLUGIN qAeroChart: Populating layers from config v2.0...")
         print(f"PLUGIN qAeroChart: Config keys: {list(config.keys())}")
-        self._crs_guard()
+        # Enforce projected CRS; block profile creation on geographic CRS (Issue #13)
+        if not self._crs_guard(enforce_block=True):
+            print("PLUGIN qAeroChart ERROR: Profile population blocked due to geographic/invalid CRS")
+            return False
         
         # Extract origin point (v2.0 uses "origin_point", v1.0 uses "reference_point")
         origin_data = config.get('origin_point', config.get('reference_point', {}))
@@ -971,8 +881,6 @@ class LayerManager:
         point_features = []
         label_features = []
         line_features = []
-        simple_final_features = []
-        simple_runway_features = []
         dist_features = []
         moca_features = []
         baseline_features = []
@@ -982,8 +890,6 @@ class LayerManager:
         layer_point = self.layers.get(self.LAYER_POINT_SYMBOL)
         layer_label = self.layers.get(self.LAYER_CARTO_LABEL)
         layer_line = self.layers.get(self.LAYER_LINE)
-        layer_final_simple = self.layers.get(self.LAYER_LINE_FINAL)
-        layer_runway_simple = self.layers.get(self.LAYER_LINE_RUNWAY)
         layer_dist = self.layers.get(self.LAYER_DIST)
         layer_moca = self.layers.get(self.LAYER_MOCA)
         
@@ -1041,12 +947,6 @@ class LayerManager:
                             label_features.append(lf)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create slope labels: {e}")
-                # also prepare feature for simple final layer
-                if layer_final_simple:
-                    feat_final = QgsFeature(layer_final_simple.fields())
-                    feat_final.setGeometry(QgsGeometry.fromPolylineXY(line_points))
-                    feat_final.setAttributes(["final", "Main Profile", 0.0])
-                    simple_final_features.append(feat_final)
             else:
                 print(f"PLUGIN qAeroChart: ❌ Profile line NOT created (line_points={bool(line_points)}, layer_line={bool(layer_line)})")
         else:
@@ -1077,18 +977,20 @@ class LayerManager:
                 feat.setAttributes(["runway", "Runway", 0.0])
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
-                # also prepare feature for simple runway layer
-                if layer_runway_simple:
-                    feat_rwy = QgsFeature(layer_runway_simple.fields())
-                    feat_rwy.setGeometry(QgsGeometry.fromPolylineXY(runway_points))
-                    feat_rwy.setAttributes(["runway", "Runway", 0.0])
-                    simple_runway_features.append(feat_rwy)
             else:
                 print(f"PLUGIN qAeroChart: ❌ Runway line NOT created")
         else:
             print(f"PLUGIN qAeroChart: ⚠️ Runway length is 0, skipping runway line")
         
         # 4. Prepare profile points with symbols and labels
+        # Compute dynamic vertical height reference for key vertical lines (Issue #16)
+        try:
+            max_elevation_ft = max(float(p.get('elevation_ft', 0)) for p in profile_points)
+        except Exception:
+            max_elevation_ft = 0.0
+        vertical_extra_m = 1000.0  # required extra height above highest point (meters)
+        vertical_top_ft = max_elevation_ft + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
+        self._dbg(f"Key verticals dynamic height -> max_elev_ft={max_elevation_ft:.2f} ft, extra={vertical_extra_m} m, top_ft={vertical_top_ft:.2f} ft")
         for point_data in profile_points:
             try:
                 distance_nm = float(point_data.get('distance_nm', 0))
@@ -1118,9 +1020,10 @@ class LayerManager:
                 if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
                     try:
                         bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # full height approx: 3000 m displayed; divide by VE in raw meters
-                        topm = 3000.0/ve
-                        top = QgsPointXY(bottom.x(), bottom.y() + topm)
+                        # Dynamic height: highest elevation + 1000 m (Issue #16)
+                        top_point = geometry.calculate_profile_point(distance_nm, vertical_top_ft)
+                        top = QgsPointXY(bottom.x(), top_point.y())  # ensure vertical
+                        self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
                         if self.layers.get(self.LAYER_KEY_VLINES):
                             lyr = self.layers[self.LAYER_KEY_VLINES]
                             feat_v = QgsFeature(lyr.fields())
@@ -1147,9 +1050,13 @@ class LayerManager:
             except Exception:
                 pass
             # Maintain visual sizes independent of VE by dividing base by VE
-            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(200.0/ve))
-            # Additionally, prepare full-height gridlines at each NM
-            grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
+            # Allow tick visual height to be configurable in style; default 200 m visual
+            try:
+                tick_visual_height_m = float(style.get('tick_height_m', 200.0))
+            except Exception:
+                tick_visual_height_m = 200.0
+            tick_height_m = tick_visual_height_m / ve
+            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=tick_height_m)
 
             # Prepare baseline feature (horizontal at y=0 from 0..max distance)
             baseline_layer = self.layers.get(self.LAYER_BASELINE)
@@ -1178,19 +1085,21 @@ class LayerManager:
             # Axis labels under baseline at each NM
             if layer_label:
                 try:
+                    # Axis labels should be 50 m BELOW the end of the tick marks (Issue #15)
+                    # We compute the label y from the same tick visual height used above, plus 50 m visual, then divide by VE
+                    label_extra_offset_visual_m = 50.0
+                    label_y_offset_m = -((tick_visual_height_m + label_extra_offset_visual_m) / ve)
                     for i in range(int(max_distance_nm) + 1):
-                        # place slightly below baseline (~60 ft visual); divide by VE
-                        pos = geometry.calculate_profile_point(i, -(60.0/ve))
+                        pos = geometry.calculate_profile_point(i, label_y_offset_m)
                         feat = QgsFeature(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
                         feat.setAttributes([label_txt, "axis", 0.0, 9])
                         label_features.append(feat)
-                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels")
+                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline")
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create axis labels: {e}")
-            # Prepare count for GRID (full-height verticals); features will be added in batch section
-            print(f"PLUGIN qAeroChart: Prepared {len(grid_markers)} grid lines")
+            # Grid layer removed (Issue #14): skipping creation of full-height vertical grid lines
         
     # 6. Prepare MOCA polygons
         print(f"PLUGIN qAeroChart: === CREATING MOCA/OCA HATCH AREAS ===")
@@ -1345,7 +1254,7 @@ class LayerManager:
         
         # BATCH ADD: Add all features in bulk (single edit cycle per layer)
         print(f"PLUGIN qAeroChart: === BATCH ADDING FEATURES ===")
-        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, SimpleFinal: {len(simple_final_features)}, SimpleRunway: {len(simple_runway_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
+        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
         
         if point_features and layer_point:
             layer_point.startEditing()
@@ -1429,54 +1338,7 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: ✅ Added {len(dist_features)} distance markers (success={success})")
             self._dbg(f"Dist layer now has {layer_dist.featureCount()} features")
 
-        # Add GRID features (full-height dashed verticals)
-        layer_grid = self.layers.get(self.LAYER_GRID)
-        if layer_grid:
-            # Rebuild grid features to ensure we didn't just prepare without adding
-            if profile_points:
-                max_distance_nm = max(float(p.get('distance_nm', 0)) for p in profile_points)
-                # Respect axis_max_nm from style if provided
-                try:
-                    axis_max = float(style.get('axis_max_nm', max_distance_nm))
-                    if axis_max > max_distance_nm:
-                        max_distance_nm = axis_max
-                except Exception:
-                    pass
-                # Keep grid visual height approx 1500 m regardless of VE
-                grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
-                grid_features = []
-                for marker in grid_markers:
-                    bottom, top = marker['geometry']
-                    feat = QgsFeature(layer_grid.fields())
-                    feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                    feat.setAttributes([marker['distance'], 'grid'])
-                    grid_features.append(feat)
-                if grid_features:
-                    layer_grid.startEditing()
-                    success = layer_grid.addFeatures(grid_features)
-                    layer_grid.commitChanges()
-                    layer_grid.updateExtents()
-                    layer_grid.triggerRepaint()
-                    print(f"PLUGIN qAeroChart: ✅ Added {len(grid_features)} grid lines")
 
-        # Add simple line layers as a robust visual fallback and to match expected structure
-        if simple_final_features and layer_final_simple:
-            layer_final_simple.startEditing()
-            success = layer_final_simple.addFeatures(simple_final_features)
-            layer_final_simple.commitChanges()
-            layer_final_simple.updateExtents()
-            layer_final_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(simple_final_features)} features to {self.LAYER_LINE_FINAL}")
-            self._dbg(f"{self.LAYER_LINE_FINAL} now has {layer_final_simple.featureCount()} features")
-
-        if simple_runway_features and layer_runway_simple:
-            layer_runway_simple.startEditing()
-            success = layer_runway_simple.addFeatures(simple_runway_features)
-            layer_runway_simple.commitChanges()
-            layer_runway_simple.updateExtents()
-            layer_runway_simple.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(simple_runway_features)} features to {self.LAYER_LINE_RUNWAY}")
-            self._dbg(f"{self.LAYER_LINE_RUNWAY} now has {layer_runway_simple.featureCount()} features")
 
         # Add KEY VERTICALS features
         key_v_layer = self.layers.get(self.LAYER_KEY_VLINES)

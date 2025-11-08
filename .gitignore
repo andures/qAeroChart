@@ -2,5 +2,5 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
-# Ignore entire docs directory (all files)
+# Ignore entire docs directory (all files, all types) per new policy
 /docs/

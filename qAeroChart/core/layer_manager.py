@@ -64,10 +64,15 @@ class LayerManager:
         self.iface = iface
         self.project = QgsProject.instance()
         
-        # Use project CRS if not specified
-        if crs is None:
-            self.crs = self.project.crs()
-        else:
+        # Always use the project CRS for layer creation (Issue #13)
+        # If a different CRS is passed in, log and override to project CRS to guarantee consistency.
+        try:
+            project_crs = self.project.crs()
+            if crs is not None and project_crs.isValid() and crs != project_crs:
+                print(f"[qAeroChart][WARN] Overriding provided CRS {crs.authid()} with project CRS {project_crs.authid()} for consistency")
+            self.crs = project_crs
+        except Exception:
+            # Fallback: if project CRS not available, use provided, else leave unset (will be caught by guards)
             self.crs = crs
         
         # Debug flag (can be overridden by config in create_all_layers)
@@ -93,24 +98,47 @@ class LayerManager:
         if self.debug:
             self._log(message, level="DEBUG")
 
-    def _crs_guard(self):
-        """Warn if using a geographic CRS (degrees) which breaks metric profile drawing."""
+    def _crs_guard(self, *, enforce_block=False):
+        """
+        Check CRS suitability.
+        - If geographic CRS (degrees), optionally block further actions per Issue #13.
+        - Always inform user via message bar.
+        
+        Args:
+            enforce_block (bool): When True, show a red error and signal caller to abort.
+        
+        Returns:
+            bool: True if CRS is acceptable (projected), False if geographic and enforce_block requested.
+        """
         try:
-            if self.crs.isGeographic():
+            current_crs = self.project.crs() if self.project else self.crs
+            if current_crs is None or not current_crs.isValid():
+                msg = "Project CRS is not set or invalid. Set a projected CRS (meters) before creating a profile."
+                self._log(msg, level="WARN")
+                try:
+                    if self.iface:
+                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
+                except Exception:
+                    pass
+                return False if enforce_block else True
+
+            if current_crs.isGeographic():
                 msg = (
-                    f"Project CRS {self.crs.authid()} is geographic (degrees). "
-                    "Use a projected CRS (meters) for correct distances/altitudes."
+                    f"Project CRS {current_crs.authid()} is geographic (degrees). "
+                    "Set a projected CRS (meters) and retry. Profile creation is blocked (Issue #13)."
                 )
                 self._log(msg, level="WARN")
                 try:
                     if self.iface:
-                        self.iface.messageBar().pushMessage(
-                            "qAeroChart", msg, level=Qgis.Warning, duration=6
-                        )
+                        # Red bar
+                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
                 except Exception:
                     pass
+                return False if enforce_block else True
+            return True
         except Exception as e:
             self._log(f"CRS guard check failed: {e}", level="WARN")
+            return True
     
     def create_all_layers(self, config=None):
         """
@@ -131,7 +159,10 @@ class LayerManager:
 
         self._dbg("Starting create_all_layers()")
         print("PLUGIN qAeroChart: Creating all profile layers...")
-        self._crs_guard()
+        # Enforce projected CRS; block if geographic (Issue #13)
+        if not self._crs_guard(enforce_block=True):
+            self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
+            return {}
         
         # Create group first
         self._create_layer_group()
@@ -849,7 +880,10 @@ class LayerManager:
         self._dbg("Starting populate_layers_from_config()")
         print("PLUGIN qAeroChart: Populating layers from config v2.0...")
         print(f"PLUGIN qAeroChart: Config keys: {list(config.keys())}")
-        self._crs_guard()
+        # Enforce projected CRS; block profile creation on geographic CRS (Issue #13)
+        if not self._crs_guard(enforce_block=True):
+            print("PLUGIN qAeroChart ERROR: Profile population blocked due to geographic/invalid CRS")
+            return False
         
         # Extract origin point (v2.0 uses "origin_point", v1.0 uses "reference_point")
         origin_data = config.get('origin_point', config.get('reference_point', {}))

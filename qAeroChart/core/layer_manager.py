@@ -433,31 +433,14 @@ class LayerManager:
         except Exception:
             pass
 
-        # Optionally promote render order so these layers are drawn above others
+        # WYSIWYG request (Issue #11): Disable any custom render ordering so the layer panel order controls drawing.
         try:
             root = self.project.layerTreeRoot()
-            # Build preferred order: our layers first (leaves only), then the rest
-            preferred = []
-            for name in [self.LAYER_MOCA, self.LAYER_GRID, self.LAYER_BASELINE, self.LAYER_KEY_VLINES, self.LAYER_DIST, self.LAYER_LINE_RUNWAY, self.LAYER_LINE_FINAL, self.LAYER_LINE, self.LAYER_POINT_SYMBOL, self.LAYER_CARTO_LABEL]:
-                lyr = self.layers.get(name)
-                if lyr:
-                    preferred.append(lyr)
-            current = [l for l in self.project.mapLayers().values() if l not in preferred]
-            new_order = preferred + current
-            # Methods differ slightly across QGIS versions; try both styles
-            try:
-                root.setCustomLayerOrder(new_order)
-                root.setHasCustomLayerOrder(True)
-                self._dbg("Applied custom layer order: profile group on top")
-            except Exception:
-                try:
-                    self.project.setCustomLayerOrder(new_order)
-                    self.project.setTopologicalEditing(False)  # harmless no-op hint for some versions
-                    self._dbg("Applied project custom layer order fallback")
-                except Exception:
-                    pass
+            if hasattr(root, 'hasCustomLayerOrder') and root.hasCustomLayerOrder():
+                root.setHasCustomLayerOrder(False)
+                self._dbg("Disabled custom layer order (WYSIWYG rendering order)")
         except Exception as e:
-            self._log(f"Could not promote custom layer order: {e}", level="WARN")
+            self._log(f"Could not disable custom layer order: {e}", level="WARN")
     
     def _apply_basic_styles(self, config=None):
         """

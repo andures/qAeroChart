@@ -2,8 +2,9 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
-# Ignore entire docs directory (requested)
-/docs/
-
-# (Redundant) Ignore PR markdown drafts in docs/
-docs/PR-issue-*.md
+# Ignore docs assets by default, but allow Markdown files
+/docs/*
+!/docs/*.md
+!/docs/**/*.md
+# But always ignore the English PR for issue 11 (requested)
+docs/PR-issue-11-*.md

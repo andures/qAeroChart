@@ -2,9 +2,6 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
-# Ignore docs assets by default, but allow Markdown files
-/docs/*
-!/docs/*.md
-!/docs/**/*.md
-# But always ignore the English PR for issue 11 (requested)
-docs/PR-issue-11-*.md
+# Ignore entire docs directory (all files, all types) per new policy
+/docs/
+

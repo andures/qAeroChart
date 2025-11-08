@@ -983,6 +983,14 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: ⚠️ Runway length is 0, skipping runway line")
         
         # 4. Prepare profile points with symbols and labels
+        # Compute dynamic vertical height reference for key vertical lines (Issue #16)
+        try:
+            max_elevation_ft = max(float(p.get('elevation_ft', 0)) for p in profile_points)
+        except Exception:
+            max_elevation_ft = 0.0
+        vertical_extra_m = 1000.0  # required extra height above highest point (meters)
+        vertical_top_ft = max_elevation_ft + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
+        self._dbg(f"Key verticals dynamic height -> max_elev_ft={max_elevation_ft:.2f} ft, extra={vertical_extra_m} m, top_ft={vertical_top_ft:.2f} ft")
         for point_data in profile_points:
             try:
                 distance_nm = float(point_data.get('distance_nm', 0))
@@ -1012,9 +1020,10 @@ class LayerManager:
                 if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
                     try:
                         bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # full height approx: 3000 m displayed; divide by VE in raw meters
-                        topm = 3000.0/ve
-                        top = QgsPointXY(bottom.x(), bottom.y() + topm)
+                        # Dynamic height: highest elevation + 1000 m (Issue #16)
+                        top_point = geometry.calculate_profile_point(distance_nm, vertical_top_ft)
+                        top = QgsPointXY(bottom.x(), top_point.y())  # ensure vertical
+                        self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
                         if self.layers.get(self.LAYER_KEY_VLINES):
                             lyr = self.layers[self.LAYER_KEY_VLINES]
                             feat_v = QgsFeature(lyr.fields())

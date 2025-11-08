@@ -1078,7 +1078,13 @@ class LayerManager:
             except Exception:
                 pass
             # Maintain visual sizes independent of VE by dividing base by VE
-            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(200.0/ve))
+            # Allow tick visual height to be configurable in style; default 200 m visual
+            try:
+                tick_visual_height_m = float(style.get('tick_height_m', 200.0))
+            except Exception:
+                tick_visual_height_m = 200.0
+            tick_height_m = tick_visual_height_m / ve
+            markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=tick_height_m)
             # Additionally, prepare full-height gridlines at each NM
             grid_markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=(1500.0/ve))
 
@@ -1109,15 +1115,18 @@ class LayerManager:
             # Axis labels under baseline at each NM
             if layer_label:
                 try:
+                    # Axis labels should be 50 m BELOW the end of the tick marks (Issue #15)
+                    # We compute the label y from the same tick visual height used above, plus 50 m visual, then divide by VE
+                    label_extra_offset_visual_m = 50.0
+                    label_y_offset_m = -((tick_visual_height_m + label_extra_offset_visual_m) / ve)
                     for i in range(int(max_distance_nm) + 1):
-                        # place slightly below baseline (~60 ft visual); divide by VE
-                        pos = geometry.calculate_profile_point(i, -(60.0/ve))
+                        pos = geometry.calculate_profile_point(i, label_y_offset_m)
                         feat = QgsFeature(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
                         feat.setAttributes([label_txt, "axis", 0.0, 9])
                         label_features.append(feat)
-                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels")
+                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline")
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create axis labels: {e}")
             # Prepare count for GRID (full-height verticals); features will be added in batch section

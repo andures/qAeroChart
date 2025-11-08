@@ -6,3 +6,5 @@
 /docs/*
 !/docs/*.md
 !/docs/**/*.md
+# But always ignore the English PR for issue 11 (requested)
+docs/PR-issue-11-*.md

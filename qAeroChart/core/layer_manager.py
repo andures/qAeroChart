@@ -1104,9 +1104,9 @@ class LayerManager:
                 if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
                     try:
                         bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # Dynamic height: highest elevation + 1000 m (Issue #16)
-                        top_point = geometry.calculate_profile_point(distance_nm, vertical_top_ft)
-                        top = QgsPointXY(bottom.x(), top_point.y())  # ensure vertical
+                        # Dynamic height: highest elevation (subject to VE) + 1000 m NOT exaggerated (Issue #16 last comment)
+                        top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
+                        top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
                         self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
                         if self.layers.get(self.LAYER_KEY_VLINES):
                             lyr = self.layers[self.LAYER_KEY_VLINES]

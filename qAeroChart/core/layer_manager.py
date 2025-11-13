@@ -1111,11 +1111,16 @@ class LayerManager:
                 if layer_point:
                     feat = QgsFeature(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
-                    feat.setAttributes([point_name, "fix", distance_nm, elevation_ft, notes])
                     try:
-                        idx = layer_point.fields().indexOf("id")
-                        if idx >= 0:
-                            feat.setAttribute(idx, next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
+                        feat.setAttributes([
+                            next_id[self.LAYER_POINT_SYMBOL],  # id (Int)
+                            point_name,
+                            "fix",
+                            distance_nm,
+                            elevation_ft,
+                            notes,
+                        ])
+                        next_id[self.LAYER_POINT_SYMBOL] += 1
                     except Exception:
                         pass
                     point_features.append(feat)
@@ -1152,12 +1157,15 @@ class LayerManager:
                             lyr = self.layers[self.LAYER_KEY_VLINES]
                             feat_v = QgsFeature(lyr.fields())
                             feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                            if len(lyr.fields())>=3:
-                                feat_v.setAttributes(["key", point_name, 0.0])
                             try:
-                                idx = lyr.fields().indexOf("id")
-                                if idx >= 0:
-                                    feat_v.setAttribute(idx, next_id[self.LAYER_KEY_VLINES]); next_id[self.LAYER_KEY_VLINES] += 1
+                                # Fields: id, line_type, segment_name, gradient
+                                feat_v.setAttributes([
+                                    next_id[self.LAYER_KEY_VLINES],  # id (Int)
+                                    "key",
+                                    point_name,
+                                    0.0,
+                                ])
+                                next_id[self.LAYER_KEY_VLINES] += 1
                             except Exception:
                                 pass
                             key_vertical_features.append(feat_v)
@@ -1210,11 +1218,15 @@ class LayerManager:
                     bottom, top = marker['geometry']
                     feat = QgsFeature(layer_dist.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                    feat.setAttributes([marker['distance'], 'Origin', 'tick'])
                     try:
-                        idx = layer_dist.fields().indexOf("id")
-                        if idx >= 0:
-                            feat.setAttribute(idx, next_id[self.LAYER_DIST]); next_id[self.LAYER_DIST] += 1
+                        # Fields: id, distance, from_point, marker_type
+                        feat.setAttributes([
+                            next_id[self.LAYER_DIST],  # id (Int)
+                            marker['distance'],
+                            'Origin',
+                            'tick',
+                        ])
+                        next_id[self.LAYER_DIST] += 1
                     except Exception:
                         pass
                     dist_features.append(feat)
@@ -1277,11 +1289,15 @@ class LayerManager:
                     poly = geometry.create_oca_box(d1, d2, hft)
                     feat = QgsFeature(layer_moca.fields())
                     feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                    feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
                     try:
-                        idx = layer_moca.fields().indexOf("id")
-                        if idx >= 0:
-                            feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                        # Fields: id, moca, segment_name, clearance
+                        feat.setAttributes([
+                            next_id[self.LAYER_MOCA],  # id (Int)
+                            hft,
+                            f"OCA {d1}-{d2}NM",
+                            0.0,
+                        ])
+                        next_id[self.LAYER_MOCA] += 1
                     except Exception:
                         pass
                     moca_features.append(feat)
@@ -1300,11 +1316,14 @@ class LayerManager:
                             poly = geometry.create_oca_box(d1, d2, hft)
                             feat = QgsFeature(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                            feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
                             try:
-                                idx = layer_moca.fields().indexOf("id")
-                                if idx >= 0:
-                                    feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                                feat.setAttributes([
+                                    next_id[self.LAYER_MOCA],
+                                    hft,
+                                    f"OCA {d1}-{d2}NM",
+                                    0.0,
+                                ])
+                                next_id[self.LAYER_MOCA] += 1
                             except Exception:
                                 pass
                             moca_features.append(feat)
@@ -1354,11 +1373,14 @@ class LayerManager:
                                 feat = QgsFeature(layer_moca.fields())
                                 geom = QgsGeometry.fromPolygonXY([moca_polygon])
                                 feat.setGeometry(geom)
-                                feat.setAttributes([moca_value, f"{point1.get('point_name', '')} - {point2.get('point_name', '')}", 0.0])
                                 try:
-                                    idx = layer_moca.fields().indexOf("id")
-                                    if idx >= 0:
-                                        feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                                    feat.setAttributes([
+                                        next_id[self.LAYER_MOCA],
+                                        moca_value,
+                                        f"{point1.get('point_name', '')} - {point2.get('point_name', '')}",
+                                        0.0,
+                                    ])
+                                    next_id[self.LAYER_MOCA] += 1
                                 except Exception:
                                     pass
                                 moca_features.append(feat)
@@ -1408,7 +1430,16 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart:   Geometry type: {geom.type()}, Area: {geom.area():.2f}")
                         
                         feat.setGeometry(geom)
-                        feat.setAttributes([moca_value, f"{point1.get('point_name', '')} - {point2.get('point_name', '')}", 0.0])
+                        try:
+                            feat.setAttributes([
+                                next_id[self.LAYER_MOCA],
+                                moca_value,
+                                f"{point1.get('point_name', '')} - {point2.get('point_name', '')}",
+                                0.0,
+                            ])
+                            next_id[self.LAYER_MOCA] += 1
+                        except Exception:
+                            pass
                         moca_features.append(feat)
                         print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                     else:

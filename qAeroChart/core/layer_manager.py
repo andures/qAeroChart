@@ -179,6 +179,30 @@ class LayerManager:
         except Exception as e:
             self._log(f"Could not ensure CRS on layer '{getattr(layer, 'name', lambda: '')()}': {e}", level="WARN")
     
+    def _create_memory_layer(self, geom_type: str, name: str) -> QgsVectorLayer:
+        """Create a memory layer with the live project CRS and an integer 'id' field.
+        geom_type: 'Point' | 'LineString' | 'Polygon'
+        """
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"{geom_type}?crs={crs_param}" if crs_param else geom_type
+        layer = QgsVectorLayer(uri, name, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
+        # Ensure ID field exists first
+        try:
+            provider = layer.dataProvider()
+            # Only add if not present
+            if provider and layer.fields().indexOf("id") < 0:
+                provider.addAttributes([QgsField("id", QVariant.Int)])
+                layer.updateFields()
+        except Exception:
+            pass
+        return layer
+    
     def create_all_layers(self, config=None):
         """
         Create all 5 profile chart layers and organize them in a group.
@@ -277,15 +301,7 @@ class LayerManager:
             QgsVectorLayer: The created layer
         """
         # Create memory layer
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"Point?crs={crs_param}" if crs_param else "Point"
-        layer = QgsVectorLayer(uri, self.LAYER_POINT_SYMBOL, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('Point', self.LAYER_POINT_SYMBOL)
         
         # Add fields
         provider = layer.dataProvider()
@@ -315,15 +331,7 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"Point?crs={crs_param}" if crs_param else "Point"
-        layer = QgsVectorLayer(uri, self.LAYER_CARTO_LABEL, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('Point', self.LAYER_CARTO_LABEL)
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -350,15 +358,7 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
-        layer = QgsVectorLayer(uri, self.LAYER_LINE, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('LineString', self.LAYER_LINE)
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -374,15 +374,7 @@ class LayerManager:
 
     def _create_named_line_layer(self, name):
         """Create a generic line layer with standard fields using the given name."""
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
-        layer = QgsVectorLayer(uri, name, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('LineString', name)
         provider = layer.dataProvider()
         provider.addAttributes([
             QgsField("line_type", QVariant.String, len=30),
@@ -408,15 +400,7 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
-        layer = QgsVectorLayer(uri, self.LAYER_DIST, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('LineString', self.LAYER_DIST)
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -445,15 +429,7 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"Polygon?crs={crs_param}" if crs_param else "Polygon"
-        layer = QgsVectorLayer(uri, self.LAYER_MOCA, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
+        layer = self._create_memory_layer('Polygon', self.LAYER_MOCA)
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -786,6 +762,12 @@ class LayerManager:
         feature = QgsFeature(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
         feature.setAttributes([point_name, point_type, distance, elevation, notes])
+        try:
+            idx = layer.fields().indexOf("id")
+            if idx >= 0:
+                feature.setAttribute(idx, layer.featureCount() + 1)
+        except Exception:
+            pass
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -820,6 +802,12 @@ class LayerManager:
         feature = QgsFeature(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
         feature.setAttributes([label_text, label_type, rotation, font_size])
+        try:
+            idx = layer.fields().indexOf("id")
+            if idx >= 0:
+                feature.setAttribute(idx, layer.featureCount() + 1)
+        except Exception:
+            pass
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -852,6 +840,12 @@ class LayerManager:
         feature = QgsFeature(layer.fields())
         feature.setGeometry(QgsGeometry.fromPolylineXY(points))
         feature.setAttributes([line_type, segment_name, gradient])
+        try:
+            idx = layer.fields().indexOf("id")
+            if idx >= 0:
+                feature.setAttribute(idx, layer.featureCount() + 1)
+        except Exception:
+            pass
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -969,6 +963,17 @@ class LayerManager:
         moca_features = []
         baseline_features = []
         key_vertical_features = []
+
+        # Per-layer ID counters (start at 1)
+        next_id = {
+            self.LAYER_POINT_SYMBOL: 1,
+            self.LAYER_CARTO_LABEL: 1,
+            self.LAYER_LINE: 1,
+            self.LAYER_DIST: 1,
+            self.LAYER_MOCA: 1,
+            self.LAYER_BASELINE: 1,
+            self.LAYER_KEY_VLINES: 1,
+        }
         
         # Get layer references
         layer_point = self.layers.get(self.LAYER_POINT_SYMBOL)
@@ -1007,6 +1012,12 @@ class LayerManager:
                 
                 feat.setGeometry(geom)
                 feat.setAttributes(["profile", "Main Profile", 0.0])
+                try:
+                    idx = layer_line.fields().indexOf("id")
+                    if idx >= 0:
+                        feat.setAttribute(idx, next_id[self.LAYER_LINE]); next_id[self.LAYER_LINE] += 1
+                except Exception:
+                    pass
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
                 # Slope labels per segment
@@ -1059,6 +1070,12 @@ class LayerManager:
                 
                 feat.setGeometry(geom)
                 feat.setAttributes(["runway", "Runway", 0.0])
+                try:
+                    idx = layer_line.fields().indexOf("id")
+                    if idx >= 0:
+                        feat.setAttribute(idx, next_id[self.LAYER_LINE]); next_id[self.LAYER_LINE] += 1
+                except Exception:
+                    pass
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
             else:
@@ -1091,6 +1108,12 @@ class LayerManager:
                     feat = QgsFeature(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
                     feat.setAttributes([point_name, "fix", distance_nm, elevation_ft, notes])
+                    try:
+                        idx = layer_point.fields().indexOf("id")
+                        if idx >= 0:
+                            feat.setAttribute(idx, next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
+                    except Exception:
+                        pass
                     point_features.append(feat)
                 
                 # Prepare label
@@ -1098,6 +1121,12 @@ class LayerManager:
                     feat = QgsFeature(layer_label.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
                     feat.setAttributes([point_name, "point_name", 0.0, 10])
+                    try:
+                        idx = layer_label.fields().indexOf("id")
+                        if idx >= 0:
+                            feat.setAttribute(idx, next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
+                    except Exception:
+                        pass
                     label_features.append(feat)
 
                 # Add key verticals for known names (FAF/IF/MAPT)
@@ -1112,7 +1141,14 @@ class LayerManager:
                             lyr = self.layers[self.LAYER_KEY_VLINES]
                             feat_v = QgsFeature(lyr.fields())
                             feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                            feat_v.setAttributes(["key", point_name, 0.0]) if len(lyr.fields())>=3 else None
+                            if len(lyr.fields())>=3:
+                                feat_v.setAttributes(["key", point_name, 0.0])
+                            try:
+                                idx = lyr.fields().indexOf("id")
+                                if idx >= 0:
+                                    feat_v.setAttribute(idx, next_id[self.LAYER_KEY_VLINES]); next_id[self.LAYER_KEY_VLINES] += 1
+                            except Exception:
+                                pass
                             key_vertical_features.append(feat_v)
                     except Exception as e:
                         print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
@@ -1151,6 +1187,12 @@ class LayerManager:
                     feat = QgsFeature(baseline_layer.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
                     feat.setAttributes(["baseline", "Baseline", 0.0])
+                    try:
+                        idx = baseline_layer.fields().indexOf("id")
+                        if idx >= 0:
+                            feat.setAttribute(idx, next_id[self.LAYER_BASELINE]); next_id[self.LAYER_BASELINE] += 1
+                    except Exception:
+                        pass
                     baseline_features.append(feat)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not prepare baseline: {e}")
@@ -1162,6 +1204,12 @@ class LayerManager:
                     feat = QgsFeature(layer_dist.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
                     feat.setAttributes([marker['distance'], 'Origin', 'tick'])
+                    try:
+                        idx = layer_dist.fields().indexOf("id")
+                        if idx >= 0:
+                            feat.setAttribute(idx, next_id[self.LAYER_DIST]); next_id[self.LAYER_DIST] += 1
+                    except Exception:
+                        pass
                     dist_features.append(feat)
                 
                 print(f"PLUGIN qAeroChart: Prepared {len(markers)} distance markers")
@@ -1181,6 +1229,12 @@ class LayerManager:
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
                         feat.setAttributes([label_txt, "axis", 0.0, 9])
+                        try:
+                            idx = layer_label.fields().indexOf("id")
+                            if idx >= 0:
+                                feat.setAttribute(idx, next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
+                        except Exception:
+                            pass
                         label_features.append(feat)
                     print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline (real), i.e., {label_y_offset_ft:.2f} ft")
                 except Exception as e:
@@ -1210,6 +1264,12 @@ class LayerManager:
                     feat = QgsFeature(layer_moca.fields())
                     feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
                     feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                    try:
+                        idx = layer_moca.fields().indexOf("id")
+                        if idx >= 0:
+                            feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                    except Exception:
+                        pass
                     moca_features.append(feat)
                     print(f"PLUGIN qAeroChart: Added OCA polygon {d1}-{d2} NM @ {hft} ft")
             except Exception as e:
@@ -1227,6 +1287,12 @@ class LayerManager:
                             feat = QgsFeature(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
                             feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                            try:
+                                idx = layer_moca.fields().indexOf("id")
+                                if idx >= 0:
+                                    feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                            except Exception:
+                                pass
                             moca_features.append(feat)
                         except Exception as e:
                             print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
@@ -1275,6 +1341,12 @@ class LayerManager:
                                 geom = QgsGeometry.fromPolygonXY([moca_polygon])
                                 feat.setGeometry(geom)
                                 feat.setAttributes([moca_value, f"{point1.get('point_name', '')} - {point2.get('point_name', '')}", 0.0])
+                                try:
+                                    idx = layer_moca.fields().indexOf("id")
+                                    if idx >= 0:
+                                        feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                                except Exception:
+                                    pass
                                 moca_features.append(feat)
                                 print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                         except (ValueError, TypeError) as e:
@@ -1396,6 +1468,12 @@ class LayerManager:
                         f = QgsFeature(layer_line.fields())
                         f.setGeometry(QgsGeometry.fromPolylineXY(rebuild_points))
                         f.setAttributes(["profile", "Main Profile (rebuild)", 0.0])
+                        try:
+                            idx = layer_line.fields().indexOf("id")
+                            if idx >= 0:
+                                f.setAttribute(idx, next_id[self.LAYER_LINE]); next_id[self.LAYER_LINE] += 1
+                        except Exception:
+                            pass
                         layer_line.startEditing()
                         ok_add = layer_line.addFeature(f)
                         ok_commit = layer_line.commitChanges()

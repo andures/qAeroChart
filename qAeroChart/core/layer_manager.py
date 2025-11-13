@@ -1173,14 +1173,16 @@ class LayerManager:
                     # We compute the label y from the same tick visual height used above, plus 50 m visual, then divide by VE
                     label_extra_offset_visual_m = 50.0
                     label_y_offset_m = -((tick_visual_height_m + label_extra_offset_visual_m) / ve)
+                    # Convert real meters to feet because calculate_profile_point expects feet
+                    label_y_offset_ft = label_y_offset_m * ProfileChartGeometry.METERS_TO_FT
                     for i in range(int(max_distance_nm) + 1):
-                        pos = geometry.calculate_profile_point(i, label_y_offset_m)
+                        pos = geometry.calculate_profile_point(i, label_y_offset_ft)
                         feat = QgsFeature(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
                         feat.setAttributes([label_txt, "axis", 0.0, 9])
                         label_features.append(feat)
-                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline")
+                    print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline (real), i.e., {label_y_offset_ft:.2f} ft")
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create axis labels: {e}")
             # Grid layer removed (Issue #14): skipping creation of full-height vertical grid lines

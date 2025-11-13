@@ -63,16 +63,12 @@ class LayerManager:
         self.iface = iface
         self.project = QgsProject.instance()
         
-        # Always use the project CRS for layer creation (Issue #13)
-        # If a different CRS is passed in, log and override to project CRS to guarantee consistency.
+        # Store a fallback CRS if provided, but always prefer live project CRS at use time.
+        # This prevents being stuck on a stale CRS after project changes.
         try:
-            project_crs = self.project.crs()
-            if crs is not None and project_crs.isValid() and crs != project_crs:
-                print(f"[qAeroChart][WARN] Overriding provided CRS {crs.authid()} with project CRS {project_crs.authid()} for consistency")
-            self.crs = project_crs
+            self.crs = crs if isinstance(crs, QgsCoordinateReferenceSystem) else None
         except Exception:
-            # Fallback: if project CRS not available, use provided, else leave unset (will be caught by guards)
-            self.crs = crs
+            self.crs = None
         
         # Debug flag (can be overridden by config in create_all_layers)
         self.debug = True
@@ -83,7 +79,11 @@ class LayerManager:
         # Group reference
         self.layer_group = None
         
-        print(f"PLUGIN qAeroChart: LayerManager initialized with CRS: {self.crs.authid()}")
+        try:
+            init_auth = (self.project.crs().authid() if self.project and self.project.crs().isValid() else (self.crs.authid() if self.crs else ''))
+            print(f"PLUGIN qAeroChart: LayerManager initialized with CRS: {init_auth}")
+        except Exception:
+            print("PLUGIN qAeroChart: LayerManager initialized (CRS unknown)")
 
     # ------------- Internal helpers -------------
     def _log(self, message, level="INFO"):
@@ -97,7 +97,7 @@ class LayerManager:
         if self.debug:
             self._log(message, level="DEBUG")
 
-    def _crs_guard(self, *, enforce_block=False):
+    def _crs_guard(self, *, enforce_block=False, show_message=True):
         """
         Check CRS suitability.
         - If geographic CRS (degrees), optionally block further actions per Issue #13.
@@ -115,7 +115,7 @@ class LayerManager:
                 msg = "Project CRS is not set or invalid. Set a projected CRS (meters) before creating a profile."
                 self._log(msg, level="WARN")
                 try:
-                    if self.iface:
+                    if show_message and self.iface:
                         self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
                 except Exception:
                     pass
@@ -124,11 +124,11 @@ class LayerManager:
             if current_crs.isGeographic():
                 msg = (
                     f"Project CRS {current_crs.authid()} is geographic (degrees). "
-                    "Set a projected CRS (meters) and retry. Profile creation is blocked (Issue #13)."
+                    "Set a projected CRS (meters) and retry. Profile creation is blocked."
                 )
                 self._log(msg, level="WARN")
                 try:
-                    if self.iface:
+                    if show_message and self.iface:
                         # Red bar
                         self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
                 except Exception:
@@ -138,6 +138,46 @@ class LayerManager:
         except Exception as e:
             self._log(f"CRS guard check failed: {e}", level="WARN")
             return True
+
+    def _current_project_crs(self):
+        """Return the current project CRS if valid, else fallback to self.crs."""
+        try:
+            if self.project and self.project.crs() and self.project.crs().isValid():
+                return self.project.crs()
+        except Exception:
+            pass
+        return self.crs
+
+    def _crs_param_for_uri(self, crs_obj):
+        """Build a robust CRS parameter for memory layer URI.
+        Prefer EPSG code if available; fallback to authid; else return None.
+        """
+        try:
+            if not crs_obj:
+                return None
+            epsg = crs_obj.postgisSrid()
+            if isinstance(epsg, int) and epsg > 0:
+                return f"EPSG:{epsg}"
+            auth = crs_obj.authid()
+            if auth:
+                return auth
+        except Exception:
+            pass
+        return None
+
+    def _ensure_layer_crs(self, layer):
+        """Force-assign current project CRS to a layer if missing or different.
+        This double-check mitigates cases where provider URI is ignored.
+        """
+        try:
+            proj_crs = self._current_project_crs()
+            if not proj_crs or not isinstance(layer, QgsVectorLayer):
+                return
+            # If layer has no CRS or a different one, set it explicitly
+            if not layer.crs().isValid() or layer.crs() != proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception as e:
+            self._log(f"Could not ensure CRS on layer '{getattr(layer, 'name', lambda: '')()}': {e}", level="WARN")
     
     def create_all_layers(self, config=None):
         """
@@ -158,8 +198,8 @@ class LayerManager:
 
         self._dbg("Starting create_all_layers()")
         print("PLUGIN qAeroChart: Creating all profile layers...")
-        # Enforce projected CRS; block if geographic (Issue #13)
-        if not self._crs_guard(enforce_block=True):
+        # Enforce projected CRS; block if geographic (Issue #13). Show message once at caller.
+        if not self._crs_guard(enforce_block=True, show_message=False):
             self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
             return {}
         
@@ -237,8 +277,15 @@ class LayerManager:
             QgsVectorLayer: The created layer
         """
         # Create memory layer
-        uri = f"Point?crs={self.crs.authid()}"
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"Point?crs={crs_param}" if crs_param else "Point"
         layer = QgsVectorLayer(uri, self.LAYER_POINT_SYMBOL, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         
         # Add fields
         provider = layer.dataProvider()
@@ -268,8 +315,15 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        uri = f"Point?crs={self.crs.authid()}"
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"Point?crs={crs_param}" if crs_param else "Point"
         layer = QgsVectorLayer(uri, self.LAYER_CARTO_LABEL, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -296,8 +350,15 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        uri = f"LineString?crs={self.crs.authid()}"
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
         layer = QgsVectorLayer(uri, self.LAYER_LINE, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -313,8 +374,15 @@ class LayerManager:
 
     def _create_named_line_layer(self, name):
         """Create a generic line layer with standard fields using the given name."""
-        uri = f"LineString?crs={self.crs.authid()}"
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
         layer = QgsVectorLayer(uri, name, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         provider = layer.dataProvider()
         provider.addAttributes([
             QgsField("line_type", QVariant.String, len=30),
@@ -340,8 +408,15 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        uri = f"LineString?crs={self.crs.authid()}"
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"LineString?crs={crs_param}" if crs_param else "LineString"
         layer = QgsVectorLayer(uri, self.LAYER_DIST, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -370,8 +445,15 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        uri = f"Polygon?crs={self.crs.authid()}"  # Changed from LineString to Polygon
+        proj_crs = self._current_project_crs()
+        crs_param = self._crs_param_for_uri(proj_crs)
+        uri = f"Polygon?crs={crs_param}" if crs_param else "Polygon"
         layer = QgsVectorLayer(uri, self.LAYER_MOCA, "memory")
+        try:
+            if proj_crs:
+                layer.setCrs(proj_crs)
+        except Exception:
+            pass
         
         provider = layer.dataProvider()
         provider.addAttributes([
@@ -412,6 +494,8 @@ class LayerManager:
             if layer_name in self.layers:
                 layer = self.layers[layer_name]
                 # Add to project
+                # Ensure CRS before adding (belt-and-suspenders)
+                self._ensure_layer_crs(layer)
                 self.project.addMapLayer(layer, False)
                 # Add to group
                 self.layer_group.addLayer(layer)
@@ -843,8 +927,8 @@ class LayerManager:
         self._dbg("Starting populate_layers_from_config()")
         print("PLUGIN qAeroChart: Populating layers from config v2.0...")
         print(f"PLUGIN qAeroChart: Config keys: {list(config.keys())}")
-        # Enforce projected CRS; block profile creation on geographic CRS (Issue #13)
-        if not self._crs_guard(enforce_block=True):
+        # Enforce projected CRS; block profile creation on geographic CRS (Issue #13). Show the message here only.
+        if not self._crs_guard(enforce_block=True, show_message=True):
             print("PLUGIN qAeroChart ERROR: Profile population blocked due to geographic/invalid CRS")
             return False
         

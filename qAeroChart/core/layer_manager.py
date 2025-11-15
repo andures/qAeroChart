@@ -223,8 +223,8 @@ class LayerManager:
 
         self._dbg("Starting create_all_layers()")
         print("PLUGIN qAeroChart: Creating all profile layers...")
-        # Enforce projected CRS; block if geographic (Issue #13). Show message once at caller.
-        if not self._crs_guard(enforce_block=True, show_message=False):
+        # Enforce projected CRS; block if geographic (Issue #13). Show a message here, too, for clarity.
+        if not self._crs_guard(enforce_block=True, show_message=True):
             self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
             return {}
         
@@ -272,18 +272,7 @@ class LayerManager:
         except Exception:
             pass
 
-        # Try to move the group to the very top of the TOC so it always renders above the basemap
-        try:
-            parent = root
-            children = list(parent.children())
-            idx = children.index(self.layer_group) if self.layer_group in children else -1
-            if idx > 0:
-                node = parent.takeChild(idx)
-                if node is not None:
-                    parent.insertChildNode(0, node)
-                    self._dbg("Moved group to the top of the layer tree")
-        except Exception as e:
-            self._log(f"Could not move group to top: {e}", level="WARN")
+        # Respect user layer tree order (Issue #11): do not auto-reorder/move group
     
     def _create_point_symbol_layer(self):
         """
@@ -791,6 +780,7 @@ class LayerManager:
         feature = QgsFeature()
         feature.setFields(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
+        # Set attributes by name to avoid index/order issues
         try:
             feature.setAttribute("id", layer.featureCount() + 1)
         except Exception:
@@ -1103,7 +1093,15 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
+<<<<<<< HEAD
                     feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
+=======
+                    # Set attributes by name
+                    try:
+                        feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
+                    except Exception:
+                        pass
+>>>>>>> fix/issue-23
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
@@ -1116,7 +1114,15 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_label.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
+<<<<<<< HEAD
                     feat.setAttribute("id", next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
+=======
+                    # Set attributes by name
+                    try:
+                        feat.setAttribute("id", next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
+                    except Exception:
+                        pass
+>>>>>>> fix/issue-23
                     feat.setAttribute("label_text", point_name)
                     feat.setAttribute("label_type", "point_name")
                     feat.setAttribute("rotation", 0.0)
@@ -1259,13 +1265,14 @@ class LayerManager:
                     d2 = float(oca_single.get('to_nm', 0))
                     hft = float(oca_single.get('oca_ft', oca_single.get('height_ft', 0)))
                     poly = geometry.create_oca_box(d1, d2, hft)
-                    feat = QgsFeature(layer_moca.fields())
+                    feat = QgsFeature()
+                    feat.setFields(layer_moca.fields())
                     feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                    feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                    feat.setAttribute("moca", float(hft))
+                    feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                    feat.setAttribute("clearance", 0.0)
                     try:
-                        idx = layer_moca.fields().indexOf("id")
-                        if idx >= 0:
-                            feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                        feat.setAttribute("id", next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
                     except Exception:
                         pass
                     moca_features.append(feat)
@@ -1282,13 +1289,14 @@ class LayerManager:
                             d2 = float(seg.get('to_nm', seg.get('to', 0)))
                             hft = float(seg.get('oca_ft', seg.get('height_ft', 0)))
                             poly = geometry.create_oca_box(d1, d2, hft)
-                            feat = QgsFeature(layer_moca.fields())
+                            feat = QgsFeature()
+                            feat.setFields(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                            feat.setAttributes([hft, f"OCA {d1}-{d2}NM", 0.0])
+                            feat.setAttribute("moca", float(hft))
+                            feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                            feat.setAttribute("clearance", 0.0)
                             try:
-                                idx = layer_moca.fields().indexOf("id")
-                                if idx >= 0:
-                                    feat.setAttribute(idx, next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                                feat.setAttribute("id", next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
                             except Exception:
                                 pass
                             moca_features.append(feat)
@@ -1313,9 +1321,16 @@ class LayerManager:
                                 feat = QgsFeature()
                                 feat.setFields(layer_moca.fields())
                                 feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                                # Set attributes by name and ensure id is assigned
                                 feat.setAttribute("moca", float(hft))
                                 feat.setAttribute("segment_name", f"{d1}-{d2}NM")
                                 feat.setAttribute("clearance", 0.0)
+                                try:
+                                    feat.setAttribute("id", next_id[self.LAYER_MOCA])
+                                    next_id[self.LAYER_MOCA] += 1
+                                except Exception as e_attr:
+                                    print(f"PLUGIN qAeroChart ERROR: Failed to set explicit MOCA id: {e_attr}")
+                                    continue
                                 moca_features.append(feat)
                             except Exception as e:
                                 print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
@@ -1382,8 +1397,8 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart:     Vertex {j}: X={pt.x():.2f}, Y={pt.y():.2f}")
                     
                     if layer_moca:
-                        feat = QgsFeature(layer_moca.fields())
-                        
+                        feat = QgsFeature()
+                        feat.setFields(layer_moca.fields())
                         # Create polygon geometry
                         geom = QgsGeometry.fromPolygonXY([moca_polygon])
                         
@@ -1396,7 +1411,9 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart:   Geometry type: {geom.type()}, Area: {geom.area():.2f}")
                         
                         feat.setGeometry(geom)
-                        feat.setAttributes([moca_value, f"{point1.get('point_name', '')} - {point2.get('point_name', '')}", 0.0])
+                        feat.setAttribute("moca", float(moca_value))
+                        feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
+                        feat.setAttribute("clearance", 0.0)
                         moca_features.append(feat)
                         print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                     else:

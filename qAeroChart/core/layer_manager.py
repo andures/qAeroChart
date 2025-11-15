@@ -1110,22 +1110,9 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
-<<<<<<< HEAD
-                    try:
-                        feat.setAttributes([
-                            next_id[self.LAYER_POINT_SYMBOL],  # id (Int)
-                            point_name,
-                            "fix",
-                            distance_nm,
-                            elevation_ft,
-                            notes,
-                        ])
-                        next_id[self.LAYER_POINT_SYMBOL] += 1
-=======
                     # Set attributes by name
                     try:
                         feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
->>>>>>> fix/issue-23
                     except Exception:
                         pass
                     feat.setAttribute("point_name", point_name)
@@ -1169,24 +1156,12 @@ class LayerManager:
                             feat_v = QgsFeature()
                             feat_v.setFields(lyr.fields())
                             feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-<<<<<<< HEAD
-                            try:
-                                # Fields: id, line_type, segment_name, gradient
-                                feat_v.setAttributes([
-                                    next_id[self.LAYER_KEY_VLINES],  # id (Int)
-                                    "key",
-                                    point_name,
-                                    0.0,
-                                ])
-                                next_id[self.LAYER_KEY_VLINES] += 1
-=======
                             if len(lyr.fields())>=3:
                                 feat_v.setAttribute("line_type", "key")
                                 feat_v.setAttribute("segment_name", point_name)
                                 feat_v.setAttribute("gradient", 0.0)
                             try:
                                 feat_v.setAttribute("id", next_id[self.LAYER_KEY_VLINES]); next_id[self.LAYER_KEY_VLINES] += 1
->>>>>>> fix/issue-23
                             except Exception:
                                 pass
                             key_vertical_features.append(feat_v)
@@ -1224,26 +1199,13 @@ class LayerManager:
                 try:
                     p0 = geometry.calculate_profile_point(0.0, 0.0)
                     p1 = geometry.calculate_profile_point(max_distance_nm, 0.0)
-<<<<<<< HEAD
-                    feat = QgsFeature(layer_line.fields())
+                    feat = QgsFeature()
+                    feat.setFields(layer_line.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
                     attr = [str(next_id[self.LAYER_LINE]), "baseline", "Baseline", "", ""]
                     feat.setAttributes(attr)
                     next_id[self.LAYER_LINE] += 1
                     line_features.append(feat)
-=======
-                    feat = QgsFeature()
-                    feat.setFields(baseline_layer.fields())
-                    feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
-                    feat.setAttribute("line_type", "baseline")
-                    feat.setAttribute("segment_name", "Baseline")
-                    feat.setAttribute("gradient", 0.0)
-                    try:
-                        feat.setAttribute("id", next_id[self.LAYER_BASELINE]); next_id[self.LAYER_BASELINE] += 1
-                    except Exception:
-                        pass
-                    baseline_features.append(feat)
->>>>>>> fix/issue-23
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not prepare baseline: {e}")
             
@@ -1481,22 +1443,13 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart:   Geometry type: {geom.type()}, Area: {geom.area():.2f}")
                         
                         feat.setGeometry(geom)
-<<<<<<< HEAD
                         try:
-                            feat.setAttributes([
-                                next_id[self.LAYER_MOCA],
-                                moca_value,
-                                f"{point1.get('point_name', '')} - {point2.get('point_name', '')}",
-                                0.0,
-                            ])
-                            next_id[self.LAYER_MOCA] += 1
+                            feat.setAttribute("id", next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
                         except Exception:
                             pass
-=======
                         feat.setAttribute("moca", float(moca_value))
                         feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
                         feat.setAttribute("clearance", 0.0)
->>>>>>> fix/issue-23
                         moca_features.append(feat)
                         print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                     else:

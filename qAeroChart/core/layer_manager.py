@@ -751,7 +751,7 @@ class LayerManager:
         feature = QgsFeature()
         feature.setFields(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
-        # Set attributes by name to avoid index/order issues
+        # Set attributes by name to avoid index/order issues (preferred on issue-23)
         try:
             feature.setAttribute("id", layer.featureCount() + 1)
         except Exception:
@@ -1334,9 +1334,16 @@ class LayerManager:
                                 feat = QgsFeature()
                                 feat.setFields(layer_moca.fields())
                                 feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                                # Set attributes by name and ensure id is assigned
                                 feat.setAttribute("moca", float(hft))
                                 feat.setAttribute("segment_name", f"{d1}-{d2}NM")
                                 feat.setAttribute("clearance", 0.0)
+                                try:
+                                    feat.setAttribute("id", next_id[self.LAYER_MOCA])
+                                    next_id[self.LAYER_MOCA] += 1
+                                except Exception as e_attr:
+                                    print(f"PLUGIN qAeroChart ERROR: Failed to set explicit MOCA id: {e_attr}")
+                                    continue
                                 moca_features.append(feat)
                             except Exception as e:
                                 print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")

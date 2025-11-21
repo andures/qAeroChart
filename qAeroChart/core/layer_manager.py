@@ -1093,15 +1093,12 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
-<<<<<<< HEAD
-                    feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
-=======
                     # Set attributes by name
                     try:
-                        feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
+                        feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL])
+                        next_id[self.LAYER_POINT_SYMBOL] += 1
                     except Exception:
                         pass
->>>>>>> fix/issue-23
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
@@ -1114,15 +1111,12 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_label.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
-<<<<<<< HEAD
-                    feat.setAttribute("id", next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
-=======
                     # Set attributes by name
                     try:
-                        feat.setAttribute("id", next_id[self.LAYER_CARTO_LABEL]); next_id[self.LAYER_CARTO_LABEL] += 1
+                        feat.setAttribute("id", next_id[self.LAYER_CARTO_LABEL])
+                        next_id[self.LAYER_CARTO_LABEL] += 1
                     except Exception:
                         pass
->>>>>>> fix/issue-23
                     feat.setAttribute("label_text", point_name)
                     feat.setAttribute("label_type", "point_name")
                     feat.setAttribute("rotation", 0.0)

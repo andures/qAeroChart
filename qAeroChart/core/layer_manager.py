@@ -530,42 +530,27 @@ class LayerManager:
         moca_fill = '#6464FF64'
         moca_hatch = '#000000'
         
-        # Style for PROFILE_LINE - Rule-based: baseline vs others (profile/runway)
+        # Style for PROFILE_LINE - Single Symbol with 0.5mm stroke (Issue #25 feedback)
         line_layer = self.layers.get(self.LAYER_LINE)
         if line_layer:
-            # Default symbol for profile/runway
-            core = QgsSimpleLineSymbolLayer(); core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer(); casing.setColor(QColor(255,255,255))
+            # Simple single symbol: black line, 0.5mm width
+            simple_line = QgsSimpleLineSymbolLayer()
+            simple_line.setColor(QColor(line_color))
             try:
-                core.setCapStyle(Qt.FlatCap); core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap); casing.setJoinStyle(Qt.MiterJoin)
+                simple_line.setCapStyle(Qt.FlatCap)
+                simple_line.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            core.setWidth(line_width); core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(line_width*1.8); casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            sym_default = QgsLineSymbol(); sym_default.appendSymbolLayer(casing); sym_default.appendSymbolLayer(core)
-
-            # Baseline symbol: dashed dark line
-            bl = QgsSimpleLineSymbolLayer(); bl.setColor(QColor(0,0,0))
-            try:
-                bl.setCapStyle(Qt.FlatCap); bl.setJoinStyle(Qt.MiterJoin)
-                bl.setUseCustomDashPattern(True); bl.setCustomDashVector([6.0, 0.8]); bl.setCustomDashPatternUnit(QgsUnitTypes.RenderMillimeters)
-            except Exception:
-                pass
-            bl.setWidth(max(line_width, 2.5)); bl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            sym_base = QgsLineSymbol(); sym_base.appendSymbolLayer(bl)
-
-            root = QgsRuleBasedRenderer.Rule(None)
-            rule_baseline = QgsRuleBasedRenderer.Rule(sym_base)
-            rule_baseline.setFilterExpression("\"symbol\" = 'baseline'")
-            rule_default = QgsRuleBasedRenderer.Rule(sym_default)
-            rule_default.setFilterExpression("\"symbol\" IN ('profile','runway')")
-            root.appendChild(rule_baseline)
-            root.appendChild(rule_default)
-            renderer = QgsRuleBasedRenderer(root)
+            simple_line.setWidth(0.5)
+            simple_line.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            
+            symbol = QgsLineSymbol()
+            symbol.appendSymbolLayer(simple_line)
+            
+            renderer = QgsSingleSymbolRenderer(symbol)
             line_layer.setRenderer(renderer)
             line_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied rule-based style to profile_line (baseline vs others)")
+            print("PLUGIN qAeroChart: Applied single symbol style to profile_line (0.5mm stroke)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)

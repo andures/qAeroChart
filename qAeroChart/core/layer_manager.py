@@ -46,7 +46,7 @@ class LayerManager:
     LAYER_LINE = "profile_line"
     LAYER_DIST = "profile_dist"
     LAYER_MOCA = "profile_MOCA"
-    LAYER_BASELINE = "profile_baseline"
+    LAYER_BASELINE = "profile_baseline"  # legacy; merged into profile_line (Issue #24)
     LAYER_KEY_VLINES = "profile_key_verticals"
     
     # Group name
@@ -179,9 +179,10 @@ class LayerManager:
         except Exception as e:
             self._log(f"Could not ensure CRS on layer '{getattr(layer, 'name', lambda: '')()}': {e}", level="WARN")
     
-    def _create_memory_layer(self, geom_type: str, name: str) -> QgsVectorLayer:
-        """Create a memory layer with the live project CRS and an integer 'id' field.
+    def _create_memory_layer(self, geom_type: str, name: str, *, id_type: QVariant = QVariant.Int) -> QgsVectorLayer:
+        """Create a memory layer with the live project CRS and an 'id' field.
         geom_type: 'Point' | 'LineString' | 'Polygon'
+        id_type: QVariant.Int (default) or QVariant.String, depending on layer schema
         """
         proj_crs = self._current_project_crs()
         crs_param = self._crs_param_for_uri(proj_crs)
@@ -197,7 +198,7 @@ class LayerManager:
             provider = layer.dataProvider()
             # Only add if not present
             if provider and layer.fields().indexOf("id") < 0:
-                provider.addAttributes([QgsField("id", QVariant.Int)])
+                provider.addAttributes([QgsField("id", id_type)])
                 layer.updateFields()
         except Exception:
             pass
@@ -273,12 +274,10 @@ class LayerManager:
         # Create group first
         self._create_layer_group()
         
-        # Create each layer
+        # Create each layer (baseline merged into profile_line per Issue #24)
         self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
         self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
         self.layers[self.LAYER_LINE] = self._create_line_layer()
-        # New supportive layers: horizontal baseline
-        self.layers[self.LAYER_BASELINE] = self._create_named_line_layer(self.LAYER_BASELINE)
         self.layers[self.LAYER_KEY_VLINES] = self._create_named_line_layer(self.LAYER_KEY_VLINES)
         self.layers[self.LAYER_DIST] = self._create_dist_layer()
         self.layers[self.LAYER_MOCA] = self._create_moca_layer()
@@ -390,13 +389,15 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        layer = self._create_memory_layer('LineString', self.LAYER_LINE)
+        # Unified schema for profile_line (Issue #24): id (string), symbol, txt_label, trim, offset_marker
+        layer = self._create_memory_layer('LineString', self.LAYER_LINE, id_type=QVariant.String)
         
         provider = layer.dataProvider()
         provider.addAttributes([
-            QgsField("line_type", QVariant.String, len=30),
-            QgsField("segment_name", QVariant.String, len=50),
-            QgsField("gradient", QVariant.Double)
+            QgsField("symbol", QVariant.String, len=30),
+            QgsField("txt_label", QVariant.String, len=80),
+            QgsField("trim", QVariant.String, len=20),
+            QgsField("offset_marker", QVariant.String, len=20)
         ])
         layer.updateFields()
         
@@ -491,7 +492,6 @@ class LayerManager:
         layer_order = [
             self.LAYER_CARTO_LABEL,
             self.LAYER_POINT_SYMBOL,
-            self.LAYER_BASELINE,
             self.LAYER_KEY_VLINES,
             self.LAYER_DIST,
             self.LAYER_LINE,
@@ -550,6 +550,7 @@ class LayerManager:
             QgsSingleSymbolRenderer,
             QgsProperty,
             Qgis,
+            QgsRuleBasedRenderer,
         )
         from qgis.PyQt.QtGui import QColor, QFont
         from qgis.PyQt.QtCore import Qt
@@ -563,33 +564,42 @@ class LayerManager:
         moca_fill = '#6464FF64'
         moca_hatch = '#000000'
         
-        # Style for PROFILE_LINE - Black solid line, configurable width
+        # Style for PROFILE_LINE - Rule-based: baseline vs others (profile/runway)
         line_layer = self.layers.get(self.LAYER_LINE)
         if line_layer:
-            # Build a double-line symbol (white casing + black core) for strong contrast
-            core = QgsSimpleLineSymbolLayer()
-            core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer()
-            casing.setColor(QColor(255, 255, 255))
-            # Make edges look straight, not rounded
+            # Default symbol for profile/runway
+            core = QgsSimpleLineSymbolLayer(); core.setColor(QColor(line_color))
+            casing = QgsSimpleLineSymbolLayer(); casing.setColor(QColor(255,255,255))
             try:
-                core.setCapStyle(Qt.FlatCap)
-                core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap)
-                casing.setJoinStyle(Qt.MiterJoin)
+                core.setCapStyle(Qt.FlatCap); core.setJoinStyle(Qt.MiterJoin)
+                casing.setCapStyle(Qt.FlatCap); casing.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            core.setWidth(line_width)
-            core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(line_width * 1.8)
-            casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            symbol = QgsLineSymbol()
-            symbol.appendSymbolLayer(casing)
-            symbol.appendSymbolLayer(core)
-            # Always use a fresh single symbol renderer to avoid invalid renderer state
-            line_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+            core.setWidth(line_width); core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            casing.setWidth(line_width*1.8); casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            sym_default = QgsLineSymbol(); sym_default.appendSymbolLayer(casing); sym_default.appendSymbolLayer(core)
+
+            # Baseline symbol: dashed dark line
+            bl = QgsSimpleLineSymbolLayer(); bl.setColor(QColor(0,0,0))
+            try:
+                bl.setCapStyle(Qt.FlatCap); bl.setJoinStyle(Qt.MiterJoin)
+                bl.setUseCustomDashPattern(True); bl.setCustomDashVector([6.0, 0.8]); bl.setCustomDashPatternUnit(QgsUnitTypes.RenderMillimeters)
+            except Exception:
+                pass
+            bl.setWidth(max(line_width, 2.5)); bl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            sym_base = QgsLineSymbol(); sym_base.appendSymbolLayer(bl)
+
+            root = QgsRuleBasedRenderer.Rule(None)
+            rule_baseline = QgsRuleBasedRenderer.Rule(sym_base)
+            rule_baseline.setFilterExpression("\"symbol\" = 'baseline'")
+            rule_default = QgsRuleBasedRenderer.Rule(sym_default)
+            rule_default.setFilterExpression("\"symbol\" IN ('profile','runway')")
+            root.appendChild(rule_baseline)
+            root.appendChild(rule_default)
+            renderer = QgsRuleBasedRenderer(root)
+            line_layer.setRenderer(renderer)
             line_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to profile_line ({line_color}, {line_width}mm)")
+            print("PLUGIN qAeroChart: Applied rule-based style to profile_line (baseline vs others)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
@@ -672,32 +682,7 @@ class LayerManager:
             moca_layer.triggerRepaint()
             print(f"PLUGIN qAeroChart: Applied style to profile_MOCA (border: {moca_border_width}mm)")
 
-        # Style for BASELINE - thick, dashed black line (small cuts)
-        baseline_layer = self.layers.get(self.LAYER_BASELINE)
-        if baseline_layer:
-            bl_core = QgsSimpleLineSymbolLayer()
-            bl_core.setColor(QColor(0, 0, 0))
-            try:
-                bl_core.setCapStyle(Qt.FlatCap)
-                bl_core.setJoinStyle(Qt.MiterJoin)
-                # Add subtle dash pattern like eAIP
-                try:
-                    bl_core.setUseCustomDashPattern(True)
-                    # pattern in mm: 6 on, 0.8 off (small cuts)
-                    bl_core.setCustomDashVector([6.0, 0.8])
-                    bl_core.setCustomDashPatternUnit(QgsUnitTypes.RenderMillimeters)
-                except Exception:
-                    from qgis.PyQt.QtCore import Qt as QtCoreQt
-                    bl_core.setPenStyle(QtCoreQt.DashLine)
-            except Exception:
-                pass
-            bl_core.setWidth(max(line_width, 2.5))
-            bl_core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            bl_symbol = QgsLineSymbol()
-            bl_symbol.appendSymbolLayer(bl_core)
-            baseline_layer.setRenderer(QgsSingleSymbolRenderer(bl_symbol))
-            baseline_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied style to profile_baseline (solid black)")
+        # Baseline layer styling removed; baseline is rendered in profile_line via rule-based styling
 
         
         
@@ -993,7 +978,7 @@ class LayerManager:
         line_features = []
         dist_features = []
         moca_features = []
-        baseline_features = []
+        baseline_features = []  # legacy list; baseline will be added to profile_line
         key_vertical_features = []
 
         # Per-layer ID counters (start at 1)
@@ -1003,7 +988,7 @@ class LayerManager:
             self.LAYER_LINE: 1,
             self.LAYER_DIST: 1,
             self.LAYER_MOCA: 1,
-            self.LAYER_BASELINE: 1,
+            # baseline merged into profile_line
             self.LAYER_KEY_VLINES: 1,
         }
         
@@ -1212,13 +1197,13 @@ class LayerManager:
             markers = geometry.create_distance_markers(max_distance_nm, marker_height_m=tick_height_m)
 
             # Prepare baseline feature (horizontal at y=0 from 0..max distance)
-            baseline_layer = self.layers.get(self.LAYER_BASELINE)
-            if baseline_layer:
+            # Add baseline as a feature in profile_line (Issue #24)
+            if layer_line:
                 try:
                     p0 = geometry.calculate_profile_point(0.0, 0.0)
                     p1 = geometry.calculate_profile_point(max_distance_nm, 0.0)
                     feat = QgsFeature()
-                    feat.setFields(baseline_layer.fields())
+                    feat.setFields(layer_line.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
                     feat.setAttribute("line_type", "baseline")
                     feat.setAttribute("segment_name", "Baseline")

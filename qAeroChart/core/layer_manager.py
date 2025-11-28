@@ -831,10 +831,15 @@ class LayerManager:
         feature.setGeometry(QgsGeometry.fromPointXY(point))
         # Set attributes by name to avoid index/order issues
         self._assign_layer_feature_id(layer, feature)
-        feature.setAttribute("label_text", label_text)
-        feature.setAttribute("label_type", label_type)
-        feature.setAttribute("rotation", float(rotation))
+        # Unified carto label schema (Issue #25)
+        feature.setAttribute("txt_label", label_text)
+        feature.setAttribute("txt_type", label_type)
+        feature.setAttribute("txt_rotation", float(rotation))
         feature.setAttribute("font_size", int(font_size))
+        feature.setAttribute("bold", bool(bold))
+        feature.setAttribute("html", bool(html))
+        feature.setAttribute("txt_justified", txt_justified)
+        feature.setAttribute("mask", bool(mask))
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -869,9 +874,11 @@ class LayerManager:
         feature.setGeometry(QgsGeometry.fromPolylineXY(points))
         # Set attributes by name to avoid index/order issues
         self._assign_layer_feature_id(layer, feature)
-        feature.setAttribute("line_type", line_type)
-        feature.setAttribute("segment_name", segment_name)
-        feature.setAttribute("gradient", float(gradient))
+        # Map legacy params to unified schema
+        feature.setAttribute("symbol", str(line_type))
+        feature.setAttribute("txt_label", str(segment_name))
+        feature.setAttribute("trim", "")
+        feature.setAttribute("offset_marker", "")
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -1038,10 +1045,11 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: Geometry type: {geom.type()}, WKT length: {len(geom.asWkt())}")
                 
                 feat.setGeometry(geom)
-                # Set attributes by name
-                feat.setAttribute("line_type", "profile")
-                feat.setAttribute("segment_name", "Main Profile")
-                feat.setAttribute("gradient", 0.0)
+                # Set attributes following unified profile_line schema (Issue #24)
+                feat.setAttribute("symbol", "profile")
+                feat.setAttribute("txt_label", "Main Profile")
+                feat.setAttribute("trim", "")
+                feat.setAttribute("offset_marker", "")
                 self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
@@ -1064,9 +1072,9 @@ class LayerManager:
                             lf = QgsFeature()
                             lf.setFields(layer_label.fields())
                             lf.setGeometry(QgsGeometry.fromPointXY(pos))
-                            lf.setAttribute("label_text", text)
-                            lf.setAttribute("label_type", "slope")
-                            lf.setAttribute("rotation", float(deg))
+                            lf.setAttribute("txt_label", text)
+                            lf.setAttribute("txt_type", "slope")
+                            lf.setAttribute("txt_rotation", float(deg))
                             lf.setAttribute("font_size", 9)
                             self._assign_feature_id(lf, self.LAYER_CARTO_LABEL, next_id)
                             label_features.append(lf)
@@ -1100,9 +1108,11 @@ class LayerManager:
                     print(f"PLUGIN qAeroChart: ❌ Runway geometry is INVALID: {geom.lastError()}")
                 
                 feat.setGeometry(geom)
-                feat.setAttribute("line_type", "runway")
-                feat.setAttribute("segment_name", "Runway")
-                feat.setAttribute("gradient", 0.0)
+                # Unified schema attributes
+                feat.setAttribute("symbol", "runway")
+                feat.setAttribute("txt_label", "Runway")
+                feat.setAttribute("trim", "")
+                feat.setAttribute("offset_marker", "")
                 self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
@@ -1152,9 +1162,9 @@ class LayerManager:
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
                     # Set attributes by name
                     self._assign_feature_id(feat, self.LAYER_CARTO_LABEL, next_id)
-                    feat.setAttribute("label_text", point_name)
-                    feat.setAttribute("label_type", "point_name")
-                    feat.setAttribute("rotation", 0.0)
+                    feat.setAttribute("txt_label", point_name)
+                    feat.setAttribute("txt_type", "point_name")
+                    feat.setAttribute("txt_rotation", 0.0)
                     feat.setAttribute("font_size", 10)
                     label_features.append(feat)
 
@@ -1214,11 +1224,13 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_line.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
-                    feat.setAttribute("line_type", "baseline")
-                    feat.setAttribute("segment_name", "Baseline")
-                    feat.setAttribute("gradient", 0.0)
-                    self._assign_feature_id(feat, self.LAYER_BASELINE, next_id)
-                    baseline_features.append(feat)
+                    # Add baseline into profile_line with symbol-based styling
+                    feat.setAttribute("symbol", "baseline")
+                    feat.setAttribute("txt_label", "Baseline")
+                    feat.setAttribute("trim", "")
+                    feat.setAttribute("offset_marker", "")
+                    self._assign_feature_id(feat, self.LAYER_LINE, next_id)
+                    line_features.append(feat)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not prepare baseline: {e}")
             
@@ -1252,9 +1264,9 @@ class LayerManager:
                         feat.setFields(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
-                        feat.setAttribute("label_text", label_txt)
-                        feat.setAttribute("label_type", "axis")
-                        feat.setAttribute("rotation", 0.0)
+                        feat.setAttribute("txt_label", label_txt)
+                        feat.setAttribute("txt_type", "axis")
+                        feat.setAttribute("txt_rotation", 0.0)
                         feat.setAttribute("font_size", 9)
                         self._assign_feature_id(feat, self.LAYER_CARTO_LABEL, next_id)
                         label_features.append(feat)
@@ -1496,9 +1508,10 @@ class LayerManager:
                         f = QgsFeature()
                         f.setFields(layer_line.fields())
                         f.setGeometry(QgsGeometry.fromPolylineXY(rebuild_points))
-                        f.setAttribute("line_type", "profile")
-                        f.setAttribute("segment_name", "Main Profile (rebuild)")
-                        f.setAttribute("gradient", 0.0)
+                        f.setAttribute("symbol", "profile")
+                        f.setAttribute("txt_label", "Main Profile (rebuild)")
+                        f.setAttribute("trim", "")
+                        f.setAttribute("offset_marker", "")
                         self._assign_feature_id(f, self.LAYER_LINE, next_id)
                         layer_line.startEditing()
                         ok_add = layer_line.addFeature(f)
@@ -1568,15 +1581,7 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: MOCA layer extent: {extent.xMinimum():.2f}, {extent.yMinimum():.2f} to {extent.xMaximum():.2f}, {extent.yMaximum():.2f}")
             print(f"PLUGIN qAeroChart: MOCA layer feature count: {feature_count}")
 
-        # Add BASELINE feature
-        baseline_layer = self.layers.get(self.LAYER_BASELINE)
-        if baseline_features and baseline_layer:
-            baseline_layer.startEditing()
-            success = baseline_layer.addFeatures(baseline_features)
-            baseline_layer.commitChanges()
-            baseline_layer.updateExtents()
-            baseline_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added baseline feature(s): {len(baseline_features)}")
+        # Baseline is added into profile_line (Issue #24); no separate baseline layer
 
         # Force refresh of canvas
         if self.iface:

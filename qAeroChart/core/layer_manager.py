@@ -353,23 +353,32 @@ class LayerManager:
         """
         Create the profile_carto_label layer for cartographic labels.
         
-        Fields:
-        - label_text: Text to display
-        - label_type: Type of label (point_name, elevation, distance, etc.)
-        - rotation: Text rotation angle
-        - font_size: Font size
+        Fields (Issue #25 unified schema):
+        - id (string)
+        - txt_label (string)      [prev: label_text]
+        - txt_type (string)       [prev: label_type]
+        - bold (bool)
+        - html (bool)
+        - font_size (int)
+        - txt_rotation (double)   [prev: rotation]
+        - txt_justified (string)
+        - mask (bool)
         
         Returns:
             QgsVectorLayer: The created layer
         """
-        layer = self._create_memory_layer('Point', self.LAYER_CARTO_LABEL)
+        layer = self._create_memory_layer('Point', self.LAYER_CARTO_LABEL, id_type=QVariant.String)
         
         provider = layer.dataProvider()
         provider.addAttributes([
-            QgsField("label_text", QVariant.String, len=100),
-            QgsField("label_type", QVariant.String, len=30),
-            QgsField("rotation", QVariant.Double),
-            QgsField("font_size", QVariant.Int)
+            QgsField("txt_label", QVariant.String, len=100),
+            QgsField("txt_type", QVariant.String, len=30),
+            QgsField("bold", QVariant.Bool),
+            QgsField("html", QVariant.Bool),
+            QgsField("font_size", QVariant.Int),
+            QgsField("txt_rotation", QVariant.Double),
+            QgsField("txt_justified", QVariant.String, len=20),
+            QgsField("mask", QVariant.Bool)
         ])
         layer.updateFields()
         
@@ -711,7 +720,7 @@ class LayerManager:
             
             # Create label settings
             label_settings = QgsPalLayerSettings()
-            label_settings.fieldName = 'label_text'  # Field containing the text to display
+            label_settings.fieldName = 'txt_label'  # Field containing the text to display
             label_settings.enabled = True
             label_settings.setFormat(text_format)
             
@@ -721,7 +730,7 @@ class LayerManager:
 
             # Data-defined rotation from attribute 'rotation' when provided (e.g., slope labels)
             try:
-                label_settings.setDataDefinedProperty(QgsPalLayerSettings.Rotation, QgsProperty.fromField('rotation'))
+                label_settings.setDataDefinedProperty(QgsPalLayerSettings.Rotation, QgsProperty.fromField('txt_rotation'))
             except Exception:
                 pass
             
@@ -798,7 +807,7 @@ class LayerManager:
         return success
     
     def add_label_feature(self, point, label_text, label_type="point_name", 
-                         rotation=0.0, font_size=10):
+                         rotation=0.0, font_size=10, *, bold=False, html=False, txt_justified="", mask=False):
         """
         Add a label feature to the profile_carto_label layer.
         
@@ -1406,6 +1415,10 @@ class LayerManager:
                         print(f"PLUGIN qAeroChart:   Geometry type: {geom.type()}, Area: {geom.area():.2f}")
                         
                         feat.setGeometry(geom)
+                        try:
+                            feat.setAttribute("id", next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                        except Exception:
+                            pass
                         feat.setAttribute("moca", float(moca_value))
                         feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
                         feat.setAttribute("clearance", 0.0)

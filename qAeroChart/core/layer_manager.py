@@ -203,6 +203,49 @@ class LayerManager:
         except Exception:
             pass
         return layer
+
+    def _assign_feature_id(self, feature, layer_key, id_tracker):
+        """
+        Helper to assign sequential IDs to features per layer.
+
+        Args:
+            feature (QgsFeature): Feature to update.
+            layer_key (str): Layer identifier constant.
+            id_tracker (dict): Mutable map storing the next id per layer.
+        """
+        try:
+            if not feature or not feature.fields():
+                return
+            if feature.fields().indexOf("id") < 0:
+                return
+            next_value = id_tracker.get(layer_key, 1)
+            feature.setAttribute("id", next_value)
+            id_tracker[layer_key] = next_value + 1
+        except Exception as e:
+            self._dbg(f"Could not assign id for layer {layer_key}: {e}")
+
+    def _assign_layer_feature_id(self, layer, feature):
+        """
+        Assign a sequential integer id for single-feature additions outside batch mode.
+        Uses the current maximum 'id' value in the target layer to avoid duplicates.
+        """
+        try:
+            if not layer or not feature:
+                return
+            idx = layer.fields().indexOf("id")
+            if idx < 0:
+                return
+            provider = layer.dataProvider()
+            max_val = provider.maximumValue(idx) if provider else None
+            next_val = 1
+            if max_val not in (None, ''):
+                try:
+                    next_val = int(max_val) + 1
+                except (TypeError, ValueError):
+                    next_val = int(float(max_val)) + 1
+            feature.setAttribute("id", next_val)
+        except Exception as e:
+            self._dbg(f"Could not assign single feature id: {e}")
     
     def create_all_layers(self, config=None):
         """
@@ -731,10 +774,7 @@ class LayerManager:
         feature.setFields(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
         # Set attributes by name to avoid index/order issues (preferred on issue-23)
-        try:
-            feature.setAttribute("id", layer.featureCount() + 1)
-        except Exception:
-            pass
+        self._assign_layer_feature_id(layer, feature)
         feature.setAttribute("point_name", point_name)
         feature.setAttribute("point_type", point_type)
         feature.setAttribute("distance", float(distance))
@@ -774,21 +814,12 @@ class LayerManager:
         feature = QgsFeature()
         feature.setFields(layer.fields())
         feature.setGeometry(QgsGeometry.fromPointXY(point))
-        # Set attributes by field name to avoid index/order issues (Issue #25 schema)
-        try:
-            feature.setAttribute(layer.fields().indexOf('txt_label'), label_text)
-            feature.setAttribute(layer.fields().indexOf('txt_type'), label_type)
-            feature.setAttribute(layer.fields().indexOf('bold'), bool(bold))
-            feature.setAttribute(layer.fields().indexOf('html'), bool(html))
-            feature.setAttribute(layer.fields().indexOf('font_size'), int(font_size))
-            feature.setAttribute(layer.fields().indexOf('txt_rotation'), float(rotation))
-            feature.setAttribute(layer.fields().indexOf('txt_justified'), str(txt_justified))
-            feature.setAttribute(layer.fields().indexOf('mask'), bool(mask))
-            idx = layer.fields().indexOf('id')
-            if idx >= 0:
-                feature.setAttribute(idx, str(layer.featureCount() + 1))
-        except Exception:
-            pass
+        # Set attributes by name to avoid index/order issues
+        self._assign_layer_feature_id(layer, feature)
+        feature.setAttribute("label_text", label_text)
+        feature.setAttribute("label_type", label_type)
+        feature.setAttribute("rotation", float(rotation))
+        feature.setAttribute("font_size", int(font_size))
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -821,9 +852,11 @@ class LayerManager:
         feature = QgsFeature()
         feature.setFields(layer.fields())
         feature.setGeometry(QgsGeometry.fromPolylineXY(points))
-        # Map to new schema: [id(str), symbol, txt_label, trim, offset_marker]
-        new_id = str(layer.featureCount() + 1)
-        feature.setAttributes([new_id, str(line_type), str(segment_name or ""), "", ""])  # gradient no longer stored
+        # Set attributes by name to avoid index/order issues
+        self._assign_layer_feature_id(layer, feature)
+        feature.setAttribute("line_type", line_type)
+        feature.setAttribute("segment_name", segment_name)
+        feature.setAttribute("gradient", float(gradient))
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -990,10 +1023,11 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: Geometry type: {geom.type()}, WKT length: {len(geom.asWkt())}")
                 
                 feat.setGeometry(geom)
-                # New schema: [id(str), symbol, txt_label, trim, offset_marker]
-                attr = [str(next_id[self.LAYER_LINE]), "profile", "Main Profile", "", ""]
-                feat.setAttributes(attr)
-                next_id[self.LAYER_LINE] += 1
+                # Set attributes by name
+                feat.setAttribute("line_type", "profile")
+                feat.setAttribute("segment_name", "Main Profile")
+                feat.setAttribute("gradient", 0.0)
+                self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
                 # Slope labels per segment
@@ -1015,20 +1049,11 @@ class LayerManager:
                             lf = QgsFeature()
                             lf.setFields(layer_label.fields())
                             lf.setGeometry(QgsGeometry.fromPointXY(pos))
-                            try:
-                                lf.setAttribute(layer_label.fields().indexOf('txt_label'), text)
-                                lf.setAttribute(layer_label.fields().indexOf('txt_type'), "slope")
-                                lf.setAttribute(layer_label.fields().indexOf('bold'), False)
-                                lf.setAttribute(layer_label.fields().indexOf('html'), False)
-                                lf.setAttribute(layer_label.fields().indexOf('font_size'), 9)
-                                lf.setAttribute(layer_label.fields().indexOf('txt_rotation'), float(deg))
-                                lf.setAttribute(layer_label.fields().indexOf('txt_justified'), "")
-                                lf.setAttribute(layer_label.fields().indexOf('mask'), True)
-                                idx = layer_label.fields().indexOf('id')
-                                if idx >= 0:
-                                    lf.setAttribute(idx, str(next_id[self.LAYER_CARTO_LABEL])); next_id[self.LAYER_CARTO_LABEL] += 1
-                            except Exception:
-                                pass
+                            lf.setAttribute("label_text", text)
+                            lf.setAttribute("label_type", "slope")
+                            lf.setAttribute("rotation", float(deg))
+                            lf.setAttribute("font_size", 9)
+                            self._assign_feature_id(lf, self.LAYER_CARTO_LABEL, next_id)
                             label_features.append(lf)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create slope labels: {e}")
@@ -1060,9 +1085,10 @@ class LayerManager:
                     print(f"PLUGIN qAeroChart: ❌ Runway geometry is INVALID: {geom.lastError()}")
                 
                 feat.setGeometry(geom)
-                attr = [str(next_id[self.LAYER_LINE]), "runway", "Runway", "", ""]
-                feat.setAttributes(attr)
-                next_id[self.LAYER_LINE] += 1
+                feat.setAttribute("line_type", "runway")
+                feat.setAttribute("segment_name", "Runway")
+                feat.setAttribute("gradient", 0.0)
+                self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
             else:
@@ -1096,10 +1122,7 @@ class LayerManager:
                     feat.setFields(layer_point.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
                     # Set attributes by name
-                    try:
-                        feat.setAttribute("id", next_id[self.LAYER_POINT_SYMBOL]); next_id[self.LAYER_POINT_SYMBOL] += 1
-                    except Exception:
-                        pass
+                    self._assign_feature_id(feat, self.LAYER_POINT_SYMBOL, next_id)
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
@@ -1112,20 +1135,12 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_label.fields())
                     feat.setGeometry(QgsGeometry.fromPointXY(point_xy))
-                    try:
-                        feat.setAttribute(layer_label.fields().indexOf('txt_label'), point_name)
-                        feat.setAttribute(layer_label.fields().indexOf('txt_type'), "point_name")
-                        feat.setAttribute(layer_label.fields().indexOf('bold'), True)
-                        feat.setAttribute(layer_label.fields().indexOf('html'), False)
-                        feat.setAttribute(layer_label.fields().indexOf('font_size'), 10)
-                        feat.setAttribute(layer_label.fields().indexOf('txt_rotation'), 0.0)
-                        feat.setAttribute(layer_label.fields().indexOf('txt_justified'), "")
-                        feat.setAttribute(layer_label.fields().indexOf('mask'), True)
-                        idx = layer_label.fields().indexOf('id')
-                        if idx >= 0:
-                            feat.setAttribute(idx, str(next_id[self.LAYER_CARTO_LABEL])); next_id[self.LAYER_CARTO_LABEL] += 1
-                    except Exception:
-                        pass
+                    # Set attributes by name
+                    self._assign_feature_id(feat, self.LAYER_CARTO_LABEL, next_id)
+                    feat.setAttribute("label_text", point_name)
+                    feat.setAttribute("label_type", "point_name")
+                    feat.setAttribute("rotation", 0.0)
+                    feat.setAttribute("font_size", 10)
                     label_features.append(feat)
 
                 # Add key verticals for known names (FAF/IF/MAPT)
@@ -1145,10 +1160,7 @@ class LayerManager:
                                 feat_v.setAttribute("line_type", "key")
                                 feat_v.setAttribute("segment_name", point_name)
                                 feat_v.setAttribute("gradient", 0.0)
-                            try:
-                                feat_v.setAttribute("id", next_id[self.LAYER_KEY_VLINES]); next_id[self.LAYER_KEY_VLINES] += 1
-                            except Exception:
-                                pass
+                            self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
                             key_vertical_features.append(feat_v)
                     except Exception as e:
                         print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
@@ -1187,10 +1199,11 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_line.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([p0, p1]))
-                    attr = [str(next_id[self.LAYER_LINE]), "baseline", "Baseline", "", ""]
-                    feat.setAttributes(attr)
-                    next_id[self.LAYER_LINE] += 1
-                    line_features.append(feat)
+                    feat.setAttribute("line_type", "baseline")
+                    feat.setAttribute("segment_name", "Baseline")
+                    feat.setAttribute("gradient", 0.0)
+                    self._assign_feature_id(feat, self.LAYER_BASELINE, next_id)
+                    baseline_features.append(feat)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not prepare baseline: {e}")
             
@@ -1201,17 +1214,10 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_dist.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                    try:
-                        # Fields: id, distance, from_point, marker_type
-                        feat.setAttributes([
-                            next_id[self.LAYER_DIST],  # id (Int)
-                            marker['distance'],
-                            'Origin',
-                            'tick',
-                        ])
-                        next_id[self.LAYER_DIST] += 1
-                    except Exception:
-                        pass
+                    feat.setAttribute("distance", float(marker['distance']))
+                    feat.setAttribute("from_point", 'Origin')
+                    feat.setAttribute("marker_type", 'tick')
+                    self._assign_feature_id(feat, self.LAYER_DIST, next_id)
                     dist_features.append(feat)
                 
                 print(f"PLUGIN qAeroChart: Prepared {len(markers)} distance markers")
@@ -1231,20 +1237,11 @@ class LayerManager:
                         feat.setFields(layer_label.fields())
                         feat.setGeometry(QgsGeometry.fromPointXY(pos))
                         label_txt = str(i)
-                        try:
-                            feat.setAttribute(layer_label.fields().indexOf('txt_label'), label_txt)
-                            feat.setAttribute(layer_label.fields().indexOf('txt_type'), "axis")
-                            feat.setAttribute(layer_label.fields().indexOf('bold'), False)
-                            feat.setAttribute(layer_label.fields().indexOf('html'), False)
-                            feat.setAttribute(layer_label.fields().indexOf('font_size'), 9)
-                            feat.setAttribute(layer_label.fields().indexOf('txt_rotation'), 0.0)
-                            feat.setAttribute(layer_label.fields().indexOf('txt_justified'), "center")
-                            feat.setAttribute(layer_label.fields().indexOf('mask'), False)
-                            idx = layer_label.fields().indexOf('id')
-                            if idx >= 0:
-                                feat.setAttribute(idx, str(next_id[self.LAYER_CARTO_LABEL])); next_id[self.LAYER_CARTO_LABEL] += 1
-                        except Exception:
-                            pass
+                        feat.setAttribute("label_text", label_txt)
+                        feat.setAttribute("label_type", "axis")
+                        feat.setAttribute("rotation", 0.0)
+                        feat.setAttribute("font_size", 9)
+                        self._assign_feature_id(feat, self.LAYER_CARTO_LABEL, next_id)
                         label_features.append(feat)
                     print(f"PLUGIN qAeroChart: Prepared {int(max_distance_nm)+1} axis labels at {label_y_offset_m:.2f} m below baseline (real), i.e., {label_y_offset_ft:.2f} ft")
                 except Exception as e:
@@ -1274,17 +1271,10 @@ class LayerManager:
                     feat = QgsFeature()
                     feat.setFields(layer_moca.fields())
                     feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                    try:
-                        # Fields: id, moca, segment_name, clearance
-                        feat.setAttributes([
-                            next_id[self.LAYER_MOCA],  # id (Int)
-                            hft,
-                            f"OCA {d1}-{d2}NM",
-                            0.0,
-                        ])
-                        next_id[self.LAYER_MOCA] += 1
-                    except Exception:
-                        pass
+                    feat.setAttribute("moca", float(hft))
+                    feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                    feat.setAttribute("clearance", 0.0)
+                    self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                     moca_features.append(feat)
                     print(f"PLUGIN qAeroChart: Added OCA polygon {d1}-{d2} NM @ {hft} ft")
             except Exception as e:
@@ -1302,16 +1292,10 @@ class LayerManager:
                             feat = QgsFeature()
                             feat.setFields(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                            try:
-                                feat.setAttributes([
-                                    next_id[self.LAYER_MOCA],
-                                    hft,
-                                    f"OCA {d1}-{d2}NM",
-                                    0.0,
-                                ])
-                                next_id[self.LAYER_MOCA] += 1
-                            except Exception:
-                                pass
+                            feat.setAttribute("moca", float(hft))
+                            feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                            feat.setAttribute("clearance", 0.0)
+                            self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                             moca_features.append(feat)
                         except Exception as e:
                             print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
@@ -1334,17 +1318,11 @@ class LayerManager:
                                 feat = QgsFeature()
                                 feat.setFields(layer_moca.fields())
                                 feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
-                                try:
-                                    feat.setAttributes([
-                                        next_id[self.LAYER_MOCA],
-                                        float(hft),
-                                        f"{d1}-{d2}NM",
-                                        0.0,
-                                    ])
-                                    next_id[self.LAYER_MOCA] += 1
-                                except Exception as e_attr:
-                                    print(f"PLUGIN qAeroChart ERROR: Failed to set explicit MOCA attributes: {e_attr}")
-                                    continue
+                                # Set attributes by name and ensure id is assigned
+                                feat.setAttribute("moca", float(hft))
+                                feat.setAttribute("segment_name", f"{d1}-{d2}NM")
+                                feat.setAttribute("clearance", 0.0)
+                                self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                                 moca_features.append(feat)
                             except Exception as e:
                                 print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
@@ -1371,16 +1349,10 @@ class LayerManager:
                                 feat.setFields(layer_moca.fields())
                                 geom = QgsGeometry.fromPolygonXY([moca_polygon])
                                 feat.setGeometry(geom)
-                                try:
-                                    feat.setAttributes([
-                                        next_id[self.LAYER_MOCA],
-                                        moca_value,
-                                        f"{point1.get('point_name', '')} - {point2.get('point_name', '')}",
-                                        0.0,
-                                    ])
-                                    next_id[self.LAYER_MOCA] += 1
-                                except Exception:
-                                    pass
+                                feat.setAttribute("moca", float(moca_value))
+                                feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
+                                feat.setAttribute("clearance", 0.0)
+                                self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                                 moca_features.append(feat)
                                 print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                         except (ValueError, TypeError) as e:
@@ -1435,6 +1407,7 @@ class LayerManager:
                         feat.setAttribute("moca", float(moca_value))
                         feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
                         feat.setAttribute("clearance", 0.0)
+                        self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                         moca_features.append(feat)
                         print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
                     else:
@@ -1508,8 +1481,10 @@ class LayerManager:
                         f = QgsFeature()
                         f.setFields(layer_line.fields())
                         f.setGeometry(QgsGeometry.fromPolylineXY(rebuild_points))
-                        f.setAttributes([str(next_id[self.LAYER_LINE]), "profile", "Main Profile (rebuild)", "", ""]) 
-                        next_id[self.LAYER_LINE] += 1
+                        f.setAttribute("line_type", "profile")
+                        f.setAttribute("segment_name", "Main Profile (rebuild)")
+                        f.setAttribute("gradient", 0.0)
+                        self._assign_feature_id(f, self.LAYER_LINE, next_id)
                         layer_line.startEditing()
                         ok_add = layer_line.addFeature(f)
                         ok_commit = layer_line.commitChanges()

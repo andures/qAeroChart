@@ -25,7 +25,8 @@ import os
 
 from qgis.PyQt import QtWidgets, uic
 from qgis.PyQt.QtCore import pyqtSignal, Qt
-from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox
+from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut
+from qgis.PyQt.QtGui import QKeySequence
 from qgis.core import Qgis, QgsPointXY
 from qgis.utils import iface
 
@@ -199,6 +200,19 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     
     def _init_profile_list(self):
         """Initialize the profile list widget."""
+        # Allow selecting multiple profiles at once
+        try:
+            self.listWidgetProfiles.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        except Exception:
+            pass
+
+        # Bind Delete key to bulk delete when list has focus
+        try:
+            self._delete_shortcut = QShortcut(QKeySequence.Delete, self.listWidgetProfiles)
+            self._delete_shortcut.activated.connect(self.delete_profile)
+        except Exception:
+            pass
+
         self._refresh_profile_list()
         print("PLUGIN qAeroChart: Profile list initialized")
     
@@ -225,8 +239,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def _on_profile_selection_changed(self):
         """Handle profile selection change."""
         selected_items = self.listWidgetProfiles.selectedItems()
-        
-        if selected_items and selected_items[0].data(Qt.UserRole):
+        # Enable actions if at least one real profile item is selected
+        has_valid = any(item.data(Qt.UserRole) for item in selected_items)
+
+        if has_valid:
             # Enable action buttons
             self.btnEditProfile.setEnabled(True)
             self.btnDrawProfile.setEnabled(True)
@@ -332,40 +348,62 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         print(f"PLUGIN qAeroChart: Drew profile {profile_id}")
     
     def delete_profile(self):
-        """Delete the selected profile."""
-        selected_items = self.listWidgetProfiles.selectedItems()
-        
+        """Delete one or multiple selected profiles."""
+        selected_items = [i for i in self.listWidgetProfiles.selectedItems() if i.data(Qt.UserRole)]
+
         if not selected_items:
             iface.messageBar().pushMessage(
                 "No Selection",
-                "Please select a profile to delete.",
+                "Please select at least one profile to delete.",
                 level=Qgis.Warning,
                 duration=3
             )
             return
-        
-        profile_id = selected_items[0].data(Qt.UserRole)
-        profile_name = selected_items[0].text()
-        
-        # Confirm deletion
+
+        count = len(selected_items)
+        # Build a short preview list (first 5 names)
+        names_preview = "\n".join([i.text() for i in selected_items[:5]])
+        more = "" if count <= 5 else f"\n…and {count - 5} more"
+
+        title = "Delete Profiles" if count > 1 else "Delete Profile"
+        body = (
+            f"Are you sure you want to delete {count} profile(s)?\n\n"
+            f"{names_preview}{more}"
+        )
+
         reply = QMessageBox.question(
             self,
-            "Delete Profile",
-            f"Are you sure you want to delete this profile?\n\n{profile_name}",
+            title,
+            body,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
-        if reply == QMessageBox.Yes:
-            self.profile_manager.delete_profile(profile_id)
-            self._refresh_profile_list()
-            iface.messageBar().pushMessage(
-                "Profile Deleted",
-                "Profile has been removed.",
-                level=Qgis.Info,
-                duration=3
-            )
-            print(f"PLUGIN qAeroChart: Deleted profile {profile_id}")
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Delete all selected profiles
+        deleted = 0
+        for item in selected_items:
+            pid = item.data(Qt.UserRole)
+            try:
+                self.profile_manager.delete_profile(pid)
+                deleted += 1
+            except Exception as e:
+                print(f"PLUGIN qAeroChart ERROR: Could not delete profile {pid}: {e}")
+
+        self._refresh_profile_list()
+
+        msg = (
+            f"{deleted} profile(s) removed." if deleted > 1 else "Profile has been removed."
+        )
+        iface.messageBar().pushMessage(
+            "Profile Deleted",
+            msg,
+            level=Qgis.Info,
+            duration=3
+        )
+        print(f"PLUGIN qAeroChart: Deleted {deleted} profile(s)")
     
     # ========== End Profile List Management ==========
     

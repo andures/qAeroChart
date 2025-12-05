@@ -24,7 +24,7 @@
 import os
 
 from qgis.PyQt import QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.PyQt.QtCore import pyqtSignal, Qt, QItemSelectionModel
 from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox
 from qgis.core import Qgis, QgsPointXY
 from qgis.utils import iface
@@ -476,7 +476,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             new_r = max(0, r - 1)
             for c in range(table.columnCount()):
                 idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QtWidgets.QItemSelectionModel.Select)
+                table.selectionModel().select(idx, QItemSelectionModel.Select)
 
     def _on_move_row_down(self):
         """Move selected row(s) down, preserving order."""
@@ -501,7 +501,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             new_r = min(row_count - 1, r + 1)
             for c in range(table.columnCount()):
                 idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QtWidgets.QItemSelectionModel.Select)
+                table.selectionModel().select(idx, QItemSelectionModel.Select)
     
     # ========== Configuration Save/Load Methods ==========
     

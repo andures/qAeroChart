@@ -24,8 +24,9 @@
 import os
 
 from qgis.PyQt import QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal, Qt, QItemSelectionModel
-from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox
+from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut
+from qgis.PyQt.QtGui import QKeySequence
 from qgis.core import Qgis, QgsPointXY
 from qgis.utils import iface
 
@@ -70,6 +71,12 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Connect list selection
         self.listWidgetProfiles.itemSelectionChanged.connect(self._on_profile_selection_changed)
+        # F2 to rename selected profile
+        try:
+            self._rename_shortcut = QShortcut(QKeySequence(Qt.Key_F2), self.listWidgetProfiles)
+            self._rename_shortcut.activated.connect(self.rename_selected_profile)
+        except Exception:
+            pass
         
         # Start on menu page
         self.stackedWidget.setCurrentIndex(0)
@@ -170,6 +177,9 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     
     def _set_default_runway_values(self):
         """Set default values for runway parameters to speed up testing."""
+        # Default profile name if user doesn't enter one yet
+        if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+            self.profile_form_widget.lineEdit_profile_name.setText("Profile 07")
         # Set default runway direction (matching typical instrument approach)
         if hasattr(self.profile_form_widget, 'lineEdit_direction'):
             self.profile_form_widget.lineEdit_direction.setText("07")
@@ -204,6 +214,19 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     
     def _init_profile_list(self):
         """Initialize the profile list widget."""
+        # Allow selecting multiple profiles at once
+        try:
+            self.listWidgetProfiles.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        except Exception:
+            pass
+
+        # Bind Delete key to bulk delete when list has focus
+        try:
+            self._delete_shortcut = QShortcut(QKeySequence.Delete, self.listWidgetProfiles)
+            self._delete_shortcut.activated.connect(self.delete_profile)
+        except Exception:
+            pass
+
         self._refresh_profile_list()
         print("PLUGIN qAeroChart: Profile list initialized")
     
@@ -230,8 +253,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def _on_profile_selection_changed(self):
         """Handle profile selection change."""
         selected_items = self.listWidgetProfiles.selectedItems()
-        
-        if selected_items and selected_items[0].data(Qt.UserRole):
+        # Enable actions if at least one real profile item is selected
+        has_valid = any(item.data(Qt.UserRole) for item in selected_items)
+
+        if has_valid:
             # Enable action buttons
             self.btnEditProfile.setEnabled(True)
             self.btnDrawProfile.setEnabled(True)
@@ -248,6 +273,8 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.reference_point = None
         if hasattr(self.profile_form_widget, 'lineEdit_reference'):
             self.profile_form_widget.lineEdit_reference.clear()
+        if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+            self.profile_form_widget.lineEdit_profile_name.clear()
         
         # Clear table and add default rows
         if hasattr(self.profile_form_widget, 'tableWidget_points'):
@@ -291,6 +318,16 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Load configuration into form
         self._populate_form_from_config(config)
+        # Also load display name into form's name field if present
+        try:
+            profiles = self.profile_manager.get_all_profiles()
+            for p in profiles:
+                if p.get('id') == profile_id:
+                    if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+                        self.profile_form_widget.lineEdit_profile_name.setText(p.get('name', ''))
+                    break
+        except Exception:
+            pass
         
         # Store profile ID for updating
         self.current_profile_id = profile_id
@@ -337,40 +374,62 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         print(f"PLUGIN qAeroChart: Drew profile {profile_id}")
     
     def delete_profile(self):
-        """Delete the selected profile."""
-        selected_items = self.listWidgetProfiles.selectedItems()
-        
+        """Delete one or multiple selected profiles."""
+        selected_items = [i for i in self.listWidgetProfiles.selectedItems() if i.data(Qt.UserRole)]
+
         if not selected_items:
             iface.messageBar().pushMessage(
                 "No Selection",
-                "Please select a profile to delete.",
+                "Please select at least one profile to delete.",
                 level=Qgis.Warning,
                 duration=3
             )
             return
-        
-        profile_id = selected_items[0].data(Qt.UserRole)
-        profile_name = selected_items[0].text()
-        
-        # Confirm deletion
+
+        count = len(selected_items)
+        # Build a short preview list (first 5 names)
+        names_preview = "\n".join([i.text() for i in selected_items[:5]])
+        more = "" if count <= 5 else f"\n…and {count - 5} more"
+
+        title = "Delete Profiles" if count > 1 else "Delete Profile"
+        body = (
+            f"Are you sure you want to delete {count} profile(s)?\n\n"
+            f"{names_preview}{more}"
+        )
+
         reply = QMessageBox.question(
             self,
-            "Delete Profile",
-            f"Are you sure you want to delete this profile?\n\n{profile_name}",
+            title,
+            body,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
-        
-        if reply == QMessageBox.Yes:
-            self.profile_manager.delete_profile(profile_id)
-            self._refresh_profile_list()
-            iface.messageBar().pushMessage(
-                "Profile Deleted",
-                "Profile has been removed.",
-                level=Qgis.Info,
-                duration=3
-            )
-            print(f"PLUGIN qAeroChart: Deleted profile {profile_id}")
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Delete all selected profiles
+        deleted = 0
+        for item in selected_items:
+            pid = item.data(Qt.UserRole)
+            try:
+                self.profile_manager.delete_profile(pid)
+                deleted += 1
+            except Exception as e:
+                print(f"PLUGIN qAeroChart ERROR: Could not delete profile {pid}: {e}")
+
+        self._refresh_profile_list()
+
+        msg = (
+            f"{deleted} profile(s) removed." if deleted > 1 else "Profile has been removed."
+        )
+        iface.messageBar().pushMessage(
+            "Profile Deleted",
+            msg,
+            level=Qgis.Info,
+            duration=3
+        )
+        print(f"PLUGIN qAeroChart: Deleted {deleted} profile(s)")
     
     # ========== End Profile List Management ==========
     
@@ -688,6 +747,67 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         config_version = config.get("version", "1.0")
         print(f"PLUGIN qAeroChart: Loaded {len(profile_points)} profile points from config v{config_version}")
+
+    def rename_selected_profile(self):
+        """Trigger rename for the currently selected profile (F2)."""
+        selected_items = self.listWidgetProfiles.selectedItems()
+        if not selected_items:
+            iface.messageBar().pushMessage(
+                "No Selection",
+                "Select a single profile to rename.",
+                level=Qgis.Warning,
+                duration=3
+            )
+            return
+        # Only rename the first selected (consistent with typical F2 behavior)
+        item = selected_items[0]
+        profile_id = item.data(Qt.UserRole)
+        if not profile_id:
+            return
+
+        # Current name
+        current_name = None
+        try:
+            profiles = self.profile_manager.get_all_profiles()
+            for p in profiles:
+                if p.get('id') == profile_id:
+                    current_name = p.get('name', '')
+                    break
+        except Exception:
+            current_name = item.text()
+
+        # Ask user for new name
+        new_name, ok = QInputDialog.getText(self, "Rename Profile", "New name:", text=current_name or "")
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name:
+            iface.messageBar().pushMessage(
+                "Invalid Name",
+                "Profile name cannot be empty.",
+                level=Qgis.Warning,
+                duration=3
+            )
+            return
+
+        # Update config and metadata with the new name
+        config = self.profile_manager.get_profile(profile_id)
+        if not config:
+            iface.messageBar().pushMessage(
+                "Error",
+                "Could not load profile configuration to rename.",
+                level=Qgis.Critical,
+                duration=3
+            )
+            return
+        self.profile_manager.update_profile(profile_id, new_name, config)
+        self._refresh_profile_list()
+        iface.messageBar().pushMessage(
+            "Profile Renamed",
+            f"Renamed to '{new_name}'.",
+            level=Qgis.Info,
+            duration=3
+        )
     
     def create_profile(self):
         """Create profile from the form data."""
@@ -697,9 +817,13 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         config = self._build_config_from_form()
         
         if config:
-            # Generate profile name from runway direction
-            runway = config.get('runway', {})
-            profile_name = f"Profile {runway.get('direction', 'N/A')}"
+            # Determine profile name (prefer explicit name field)
+            profile_name = None
+            if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+                profile_name = self.profile_form_widget.lineEdit_profile_name.text().strip()
+            if not profile_name:
+                runway = config.get('runway', {})
+                profile_name = f"Profile {runway.get('direction', 'N/A')}"
             
             # If editing existing profile, update it; otherwise create new
             if hasattr(self, 'current_profile_id') and self.current_profile_id:
@@ -723,6 +847,12 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 
                 # Reset current profile ID
                 self.current_profile_id = None
+                # Clear name for next entry
+                try:
+                    if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+                        self.profile_form_widget.lineEdit_profile_name.setText("")
+                except Exception:
+                    pass
                 
                 # KEEP FORM OPEN - Don't go back to menu
                 # User can click "Back to Menu" if they want, or create another profile

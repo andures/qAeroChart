@@ -412,35 +412,7 @@ class LayerManager:
 
     # Removed separate key verticals/dist layers per #40 merge
     
-    def _create_dist_layer(self):
-        """
-        Create the profile_dist layer for distance markers (tick lines).
-        
-        Notes:
-        - Use LineString geometry so each marker is a small vertical segment (tick)
-        - This makes the scale visually clear as en el gráfico 2D (distancia vs altitud)
-        
-        Fields:
-        - distance: Distance value (NM)
-        - from_point: Origin point name
-        - marker_type: Type of marker (tick, label, etc.)
-        
-        Returns:
-            QgsVectorLayer: The created layer
-        """
-        layer = self._create_memory_layer('LineString', self.LAYER_DIST)
-        
-        provider = layer.dataProvider()
-        provider.addAttributes([
-            QgsField("distance", QVariant.Double),
-            QgsField("from_point", QVariant.String, len=50),
-            QgsField("marker_type", QVariant.String, len=30)
-        ])
-        layer.updateFields()
-        
-        print(f"PLUGIN qAeroChart: Created layer '{self.LAYER_DIST}' with {layer.fields().count()} fields (LineString)")
-        
-        return layer
+    # _create_dist_layer removed per #40 (distance markers merged into profile_line)
 
     
     def _create_moca_layer(self):
@@ -923,27 +895,21 @@ class LayerManager:
         point_features = []
         label_features = []
         line_features = []
-        dist_features = []
         moca_features = []
         baseline_features = []  # legacy list; baseline will be added to profile_line
-        key_vertical_features = []
 
         # Per-layer ID counters (start at 1)
         next_id = {
             self.LAYER_POINT_SYMBOL: 1,
             self.LAYER_CARTO_LABEL: 1,
             self.LAYER_LINE: 1,
-            self.LAYER_DIST: 1,
             self.LAYER_MOCA: 1,
-            # baseline merged into profile_line
-            self.LAYER_KEY_VLINES: 1,
         }
         
         # Get layer references
         layer_point = self.layers.get(self.LAYER_POINT_SYMBOL)
         layer_label = self.layers.get(self.LAYER_CARTO_LABEL)
         layer_line = self.layers.get(self.LAYER_LINE)
-        layer_dist = self.layers.get(self.LAYER_DIST)
         layer_moca = self.layers.get(self.LAYER_MOCA)
         
         # Style cleanup (Issue #9): ORIGIN marker toggle removed; no origin feature added
@@ -976,11 +942,10 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: Geometry type: {geom.type()}, WKT length: {len(geom.asWkt())}")
                 
                 feat.setGeometry(geom)
-                # Set attributes following unified profile_line schema (Issue #24)
+                # Set attributes following unified profile_line schema (Issue #24/#40)
                 feat.setAttribute("symbol", "profile")
                 feat.setAttribute("txt_label", "Main Profile")
-                feat.setAttribute("trim", "")
-                feat.setAttribute("offset_marker", "")
+                feat.setAttribute("remarks", "")
                 self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
@@ -1379,56 +1344,60 @@ class LayerManager:
         
         # BATCH ADD: Add all features in bulk (single edit cycle per layer)
         print(f"PLUGIN qAeroChart: === BATCH ADDING FEATURES ===")
-        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
-        
+        print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, MOCA: {len(moca_features)}")
+
+        # Add POINT features
         if point_features and layer_point:
             layer_point.startEditing()
-            success = layer_point.addFeatures(point_features)
-            layer_point.commitChanges()
+            success_pts = layer_point.addFeatures(point_features)
+            commit_pts = layer_point.commitChanges()
+            if not commit_pts:
+                print(f"PLUGIN qAeroChart: ❌ POINT COMMIT FAILED! Errors: {layer_point.commitErrors()}")
             layer_point.updateExtents()
             layer_point.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(point_features)} point features (success={success})")
-            self._dbg(f"Point layer now has {layer_point.featureCount()} features")
-        
+            print(f"PLUGIN qAeroChart: ✅ Added {len(point_features)} point features (addFeatures={success_pts}, commit={commit_pts})")
+
+        # Add LABEL features
         if label_features and layer_label:
             layer_label.startEditing()
-            success = layer_label.addFeatures(label_features)
-            layer_label.commitChanges()
+            success_lbl = layer_label.addFeatures(label_features)
+            commit_lbl = layer_label.commitChanges()
+            if not commit_lbl:
+                print(f"PLUGIN qAeroChart: ❌ LABEL COMMIT FAILED! Errors: {layer_label.commitErrors()}")
             layer_label.updateExtents()
             layer_label.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(label_features)} label features (success={success})")
-            self._dbg(f"Label layer now has {layer_label.featureCount()} features")
+            print(f"PLUGIN qAeroChart: ✅ Added {len(label_features)} label features (addFeatures={success_lbl}, commit={commit_lbl})")
 
-        if line_features and layer_line:
-            print(f"PLUGIN qAeroChart: === ADDING LINE FEATURES ===")
-            print(f"PLUGIN qAeroChart: Layer valid: {layer_line.isValid()}")
-            print(f"PLUGIN qAeroChart: Layer CRS: {layer_line.crs().authid()}")
-            print(f"PLUGIN qAeroChart: Features in batch: {len(line_features)}")
+        # Distance markers and key verticals are merged into profile_line per #40; commit line features
+        print(f"PLUGIN qAeroChart: === ADDING LINE FEATURES ===")
+        print(f"PLUGIN qAeroChart: Layer valid: {layer_line.isValid()}")
+        print(f"PLUGIN qAeroChart: Layer CRS: {layer_line.crs().authid()}")
+        print(f"PLUGIN qAeroChart: Features in batch: {len(line_features)}")
 
-            for idx, feat in enumerate(line_features):
-                geom = feat.geometry()
-                print(f"PLUGIN qAeroChart:   Line {idx}: Valid={geom.isGeosValid()}, Type={geom.type()}, Empty={geom.isEmpty()}, WKT={geom.asWkt()[:100]}...")
+        for idx, feat in enumerate(line_features):
+            geom = feat.geometry()
+            print(f"PLUGIN qAeroChart:   Line {idx}: Valid={geom.isGeosValid()}, Type={geom.type()}, Empty={geom.isEmpty()}, WKT={geom.asWkt()[:100]}...")
 
-            layer_line.startEditing()
-            success = layer_line.addFeatures(line_features)
-            commit_success = layer_line.commitChanges()
+        layer_line.startEditing()
+        success = layer_line.addFeatures(line_features)
+        commit_success = layer_line.commitChanges()
 
-            if not commit_success:
-                errors = layer_line.commitErrors()
-                print(f"PLUGIN qAeroChart: ❌ LINE COMMIT FAILED! Errors: {errors}")
+        if not commit_success:
+            errors = layer_line.commitErrors()
+            print(f"PLUGIN qAeroChart: ❌ LINE COMMIT FAILED! Errors: {errors}")
 
-            layer_line.updateExtents()
-            layer_line.triggerRepaint()
+        layer_line.updateExtents()
+        layer_line.triggerRepaint()
 
-            # Debug: Print extent and feature count
-            extent = layer_line.extent()
-            feature_count = layer_line.featureCount()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(line_features)} line features (addFeatures={success}, commit={commit_success})")
-            print(f"PLUGIN qAeroChart: Line layer extent: {extent.xMinimum():.2f}, {extent.yMinimum():.2f} to {extent.xMaximum():.2f}, {extent.yMaximum():.2f}")
-            print(f"PLUGIN qAeroChart: Line layer feature count: {feature_count}")
+        # Debug: Print extent and feature count
+        extent = layer_line.extent()
+        feature_count = layer_line.featureCount()
+        print(f"PLUGIN qAeroChart: ✅ Added {len(line_features)} line features (addFeatures={success}, commit={commit_success})")
+        print(f"PLUGIN qAeroChart: Line layer extent: {extent.xMinimum():.2f}, {extent.yMinimum():.2f} to {extent.xMaximum():.2f}, {extent.yMaximum():.2f}")
+        print(f"PLUGIN qAeroChart: Line layer feature count: {feature_count}")
 
-            # Fallback: if for any reason no line features present, attempt to rebuild once
-            if feature_count == 0:
+        # Fallback: if for any reason no line features present, attempt to rebuild once
+        if feature_count == 0:
                 try:
                     rebuild_points = geometry.create_profile_line(profile_points)
                     if rebuild_points:
@@ -1458,26 +1427,11 @@ class LayerManager:
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Fallback rebuild failed: {e}")
 
-        if dist_features and layer_dist:
-            layer_dist.startEditing()
-            success = layer_dist.addFeatures(dist_features)
-            layer_dist.commitChanges()
-            layer_dist.updateExtents()
-            layer_dist.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(dist_features)} distance markers (success={success})")
-            self._dbg(f"Dist layer now has {layer_dist.featureCount()} features")
+        # Distance markers merged into profile_line per #40
 
 
 
-        # Add KEY VERTICALS features
-        key_v_layer = self.layers.get(self.LAYER_KEY_VLINES)
-        if key_vertical_features and key_v_layer:
-            key_v_layer.startEditing()
-            success = key_v_layer.addFeatures(key_vertical_features)
-            key_v_layer.commitChanges()
-            key_v_layer.updateExtents()
-            key_v_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(key_vertical_features)} key verticals")
+        # Key verticals merged into profile_line per #40
 
         if moca_features and layer_moca:
             print(f"PLUGIN qAeroChart: === ADDING MOCA FEATURES ===")

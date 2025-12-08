@@ -44,10 +44,8 @@ class LayerManager:
     LAYER_POINT_SYMBOL = "profile_point_symbol"
     LAYER_CARTO_LABEL = "profile_carto_label"
     LAYER_LINE = "profile_line"
-    LAYER_DIST = "profile_dist"
     LAYER_MOCA = "profile_MOCA"
     LAYER_BASELINE = "profile_baseline"  # legacy; merged into profile_line (Issue #24)
-    LAYER_KEY_VLINES = "profile_key_verticals"
     
     # Group name
     GROUP_NAME = "MAP 03 - Profile"
@@ -278,8 +276,7 @@ class LayerManager:
         self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
         self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
         self.layers[self.LAYER_LINE] = self._create_line_layer()
-        self.layers[self.LAYER_KEY_VLINES] = self._create_named_line_layer(self.LAYER_KEY_VLINES)
-        self.layers[self.LAYER_DIST] = self._create_dist_layer()
+        # Merge key verticals and distance markers into profile_line per #40
         self.layers[self.LAYER_MOCA] = self._create_moca_layer()
 
         # Emit validity and field diagnostics
@@ -398,15 +395,14 @@ class LayerManager:
         Returns:
             QgsVectorLayer: The created layer
         """
-        # Unified schema for profile_line (Issue #24): id (string), symbol, txt_label, trim, offset_marker
+        # Unified schema for merged line layer (#40): id (string), symbol, txt_label, remarks
         layer = self._create_memory_layer('LineString', self.LAYER_LINE, id_type=QVariant.String)
         
         provider = layer.dataProvider()
         provider.addAttributes([
             QgsField("symbol", QVariant.String, len=30),
             QgsField("txt_label", QVariant.String, len=80),
-            QgsField("trim", QVariant.String, len=20),
-            QgsField("offset_marker", QVariant.String, len=20)
+            QgsField("remarks", QVariant.String, len=80)
         ])
         layer.updateFields()
         
@@ -414,17 +410,7 @@ class LayerManager:
         
         return layer
 
-    def _create_named_line_layer(self, name):
-        """Create a generic line layer with standard fields using the given name."""
-        layer = self._create_memory_layer('LineString', name)
-        provider = layer.dataProvider()
-        provider.addAttributes([
-            QgsField("line_type", QVariant.String, len=30),
-            QgsField("segment_name", QVariant.String, len=50),
-            QgsField("gradient", QVariant.Double)
-        ])
-        layer.updateFields()
-        return layer
+    # Removed separate key verticals/dist layers per #40 merge
     
     def _create_dist_layer(self):
         """
@@ -501,8 +487,6 @@ class LayerManager:
         layer_order = [
             self.LAYER_CARTO_LABEL,
             self.LAYER_POINT_SYMBOL,
-            self.LAYER_KEY_VLINES,
-            self.LAYER_DIST,
             self.LAYER_LINE,
             self.LAYER_MOCA
         ]
@@ -573,42 +557,21 @@ class LayerManager:
         moca_fill = '#6464FF64'
         moca_hatch = '#000000'
         
-        # Style for PROFILE_LINE - Rule-based: baseline vs others (profile/runway)
+        # Style for PROFILE_LINE - Single symbol (default 0.5 mm) per #40
         line_layer = self.layers.get(self.LAYER_LINE)
         if line_layer:
-            # Default symbol for profile/runway
-            core = QgsSimpleLineSymbolLayer(); core.setColor(QColor(line_color))
-            casing = QgsSimpleLineSymbolLayer(); casing.setColor(QColor(255,255,255))
+            simple = QgsSimpleLineSymbolLayer()
+            simple.setColor(QColor(line_color))
             try:
-                core.setCapStyle(Qt.FlatCap); core.setJoinStyle(Qt.MiterJoin)
-                casing.setCapStyle(Qt.FlatCap); casing.setJoinStyle(Qt.MiterJoin)
+                simple.setCapStyle(Qt.FlatCap); simple.setJoinStyle(Qt.MiterJoin)
             except Exception:
                 pass
-            core.setWidth(line_width); core.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            casing.setWidth(line_width*1.8); casing.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            sym_default = QgsLineSymbol(); sym_default.appendSymbolLayer(casing); sym_default.appendSymbolLayer(core)
-
-            # Baseline symbol: dashed dark line
-            bl = QgsSimpleLineSymbolLayer(); bl.setColor(QColor(0,0,0))
-            try:
-                bl.setCapStyle(Qt.FlatCap); bl.setJoinStyle(Qt.MiterJoin)
-                bl.setUseCustomDashPattern(True); bl.setCustomDashVector([6.0, 0.8]); bl.setCustomDashPatternUnit(QgsUnitTypes.RenderMillimeters)
-            except Exception:
-                pass
-            bl.setWidth(max(line_width, 2.5)); bl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            sym_base = QgsLineSymbol(); sym_base.appendSymbolLayer(bl)
-
-            root = QgsRuleBasedRenderer.Rule(None)
-            rule_baseline = QgsRuleBasedRenderer.Rule(sym_base)
-            rule_baseline.setFilterExpression("\"symbol\" = 'baseline'")
-            rule_default = QgsRuleBasedRenderer.Rule(sym_default)
-            rule_default.setFilterExpression("\"symbol\" IN ('profile','runway')")
-            root.appendChild(rule_baseline)
-            root.appendChild(rule_default)
-            renderer = QgsRuleBasedRenderer(root)
-            line_layer.setRenderer(renderer)
+            simple.setWidth(0.5)
+            simple.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            sym = QgsLineSymbol(); sym.appendSymbolLayer(simple)
+            line_layer.setRenderer(QgsSingleSymbolRenderer(sym))
             line_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied rule-based style to profile_line (baseline vs others)")
+            print("PLUGIN qAeroChart: Applied single-symbol style to profile_line (0.5mm)")
         
         # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
@@ -622,26 +585,7 @@ class LayerManager:
             point_layer.triggerRepaint()
             print(f"PLUGIN qAeroChart: Applied style to profile_point_symbol (visible=True)")
         
-        # Style for PROFILE_DIST - Gray tick lines, 0.3 mm
-        dist_layer = self.layers.get(self.LAYER_DIST)
-        if dist_layer:
-            symbol = QgsSymbol.defaultSymbol(dist_layer.geometryType())
-            symbol.setColor(QColor(128, 128, 128))  # Gray
-            # For line symbols, configure width in millimeters
-            try:
-                symbol.setWidth(0.3)
-                from qgis.core import QgsUnitTypes
-                symbol.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            except Exception:
-                pass
-            dist_layer.renderer().setSymbol(symbol)
-            dist_layer.triggerRepaint()
-            print(f"PLUGIN qAeroChart: Applied style to profile_dist (gray tick lines, 0.3mm)")
-            # eAIP style: no 'N NM' labels on vertical ticks; axis labels below baseline are used instead.
-            try:
-                dist_layer.setLabelsEnabled(False)
-            except Exception:
-                pass
+        # PROFILE_DIST merged into PROFILE_LINE per #40
         
         # Style for PROFILE_MOCA - Configurable hatching pattern
         moca_layer = self.layers.get(self.LAYER_MOCA)
@@ -741,28 +685,7 @@ class LayerManager:
             
             print("PLUGIN qAeroChart: Applied labeling to profile_carto_label (black text with white buffer)")
 
-        # Style for KEY VERTICALS - darker dashed lines
-        key_v_layer = self.layers.get(self.LAYER_KEY_VLINES)
-        if key_v_layer:
-            kv = QgsSimpleLineSymbolLayer()
-            kv.setColor(QColor(60, 60, 60))
-            try:
-                kv.setCapStyle(Qt.FlatCap)
-                kv.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            kv.setWidth(0.6)
-            kv.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            try:
-                from qgis.PyQt.QtCore import Qt as QtCoreQt
-                kv.setPenStyle(QtCoreQt.DashLine)
-            except Exception:
-                pass
-            key_symbol = QgsLineSymbol()
-            key_symbol.appendSymbolLayer(kv)
-            key_v_layer.setRenderer(QgsSingleSymbolRenderer(key_symbol))
-            key_v_layer.triggerRepaint()
-            print("PLUGIN qAeroChart: Applied style to profile_key_verticals (dashed dark)")
+        # KEY VERTICALS merged into PROFILE_LINE per #40
     
     def add_point_feature(self, point, point_name, point_type="fix", 
                          distance=0.0, elevation=0.0, notes=""):
@@ -874,11 +797,10 @@ class LayerManager:
         feature.setGeometry(QgsGeometry.fromPolylineXY(points))
         # Set attributes by name to avoid index/order issues
         self._assign_layer_feature_id(layer, feature)
-        # Map legacy params to unified schema
+        # Map legacy params to unified schema (merged layer #40)
         feature.setAttribute("symbol", str(line_type))
         feature.setAttribute("txt_label", str(segment_name))
-        feature.setAttribute("trim", "")
-        feature.setAttribute("offset_marker", "")
+        feature.setAttribute("remarks", "")
         
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -1120,8 +1042,7 @@ class LayerManager:
                 # Unified schema attributes
                 feat.setAttribute("symbol", "runway")
                 feat.setAttribute("txt_label", "Runway")
-                feat.setAttribute("trim", "")
-                feat.setAttribute("offset_marker", "")
+                feat.setAttribute("remarks", "")
                 self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                 line_features.append(feat)
                 print(f"PLUGIN qAeroChart: ✅ Runway line feature added to batch")
@@ -1177,25 +1098,21 @@ class LayerManager:
                     feat.setAttribute("font_size", 10)
                     label_features.append(feat)
 
-                # Add key verticals for known names (FAF/IF/MAPT)
+                # Add key verticals merged into line layer per #40
                 if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
                     try:
                         bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # Dynamic height: highest elevation (subject to VE) + 1000 m NOT exaggerated (Issue #16 last comment)
                         top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
                         top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
-                        self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
-                        if self.layers.get(self.LAYER_KEY_VLINES):
-                            lyr = self.layers[self.LAYER_KEY_VLINES]
+                        if layer_line:
                             feat_v = QgsFeature()
-                            feat_v.setFields(lyr.fields())
+                            feat_v.setFields(layer_line.fields())
                             feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                            if len(lyr.fields())>=3:
-                                feat_v.setAttribute("line_type", "key")
-                                feat_v.setAttribute("segment_name", point_name)
-                                feat_v.setAttribute("gradient", 0.0)
-                            self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
-                            key_vertical_features.append(feat_v)
+                            feat_v.setAttribute("symbol", "key")
+                            feat_v.setAttribute("txt_label", "")
+                            feat_v.setAttribute("remarks", point_name)
+                            self._assign_feature_id(feat_v, self.LAYER_LINE, next_id)
+                            line_features.append(feat_v)
                     except Exception as e:
                         print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
                 
@@ -1236,27 +1153,28 @@ class LayerManager:
                     # Add baseline into profile_line with symbol-based styling
                     feat.setAttribute("symbol", "baseline")
                     feat.setAttribute("txt_label", "Baseline")
-                    feat.setAttribute("trim", "")
-                    feat.setAttribute("offset_marker", "")
+                    feat.setAttribute("remarks", "")
                     self._assign_feature_id(feat, self.LAYER_LINE, next_id)
                     line_features.append(feat)
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not prepare baseline: {e}")
             
-            if layer_dist:
+            # Merge distance markers into line layer per #40
+            if layer_line:
                 for marker in markers:
-                    # marker['geometry'] contains [bottom, top] points
                     bottom, top = marker['geometry']
                     feat = QgsFeature()
-                    feat.setFields(layer_dist.fields())
+                    feat.setFields(layer_line.fields())
                     feat.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                    feat.setAttribute("distance", float(marker['distance']))
-                    feat.setAttribute("from_point", 'Origin')
-                    feat.setAttribute("marker_type", 'tick')
-                    self._assign_feature_id(feat, self.LAYER_DIST, next_id)
-                    dist_features.append(feat)
-                
-                print(f"PLUGIN qAeroChart: Prepared {len(markers)} distance markers")
+                    feat.setAttribute("symbol", 'tick')
+                    try:
+                        feat.setAttribute("txt_label", str(marker.get('label', marker.get('distance'))))
+                    except Exception:
+                        feat.setAttribute("txt_label", str(marker.get('distance', '')))
+                    feat.setAttribute("remarks", '')
+                    self._assign_feature_id(feat, self.LAYER_LINE, next_id)
+                    line_features.append(feat)
+                print(f"PLUGIN qAeroChart: Prepared {len(markers)} distance markers (merged into profile_line)")
 
             # Axis labels under baseline at each NM
             if layer_label:
@@ -1519,8 +1437,7 @@ class LayerManager:
                         f.setGeometry(QgsGeometry.fromPolylineXY(rebuild_points))
                         f.setAttribute("symbol", "profile")
                         f.setAttribute("txt_label", "Main Profile (rebuild)")
-                        f.setAttribute("trim", "")
-                        f.setAttribute("offset_marker", "")
+                        f.setAttribute("remarks", "")
                         self._assign_feature_id(f, self.LAYER_LINE, next_id)
                         layer_line.startEditing()
                         ok_add = layer_line.addFeature(f)

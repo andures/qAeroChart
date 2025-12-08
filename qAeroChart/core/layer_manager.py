@@ -557,6 +557,7 @@ class LayerManager:
             QgsUnitTypes,
             QgsLineSymbol,
             QgsSingleSymbolRenderer,
+            QgsNullSymbolRenderer,
             QgsProperty,
             Qgis,
             QgsRuleBasedRenderer,
@@ -698,11 +699,15 @@ class LayerManager:
         # Style for CARTO_LABEL - Configure text labels
         label_layer = self.layers.get(self.LAYER_CARTO_LABEL)
         if label_layer:
-            # Make point symbols invisible (we only want text labels)
-            symbol = QgsSymbol.defaultSymbol(label_layer.geometryType())
-            symbol.setColor(QColor(0, 0, 0, 0))  # Transparent
-            symbol.setSize(0.5)  # Very small
-            label_layer.renderer().setSymbol(symbol)
+            # Use 'No Symbols' renderer – only labels should be drawn (Issue #39)
+            try:
+                label_layer.setRenderer(QgsNullSymbolRenderer())
+            except Exception:
+                # Fallback to transparent symbol if Null renderer unavailable
+                symbol = QgsSymbol.defaultSymbol(label_layer.geometryType())
+                symbol.setColor(QColor(0, 0, 0, 0))
+                symbol.setSize(0.01)
+                label_layer.renderer().setSymbol(symbol)
             
             # Configure text format for labels
             text_format = QgsTextFormat()

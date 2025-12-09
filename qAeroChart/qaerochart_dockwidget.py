@@ -24,8 +24,8 @@
 import os
 
 from qgis.PyQt import QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal, Qt
-from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut, QInputDialog
+from qgis.PyQt.QtCore import pyqtSignal, Qt, QItemSelectionModel
+from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut
 from qgis.PyQt.QtGui import QKeySequence
 from qgis.core import Qgis, QgsPointXY
 from qgis.utils import iface
@@ -556,9 +556,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = max(0, r - 1)
-            for c in range(table.columnCount()):
-                idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QItemSelectionModel.Select)
+            # Select the entire moved row and keep focus on first column
+            try:
+                table.selectRow(new_r)
+            except Exception:
+                # Fallback: select cells if selectRow unavailable
+                for c in range(table.columnCount()):
+                    idx = table.model().index(new_r, c)
+                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            table.setCurrentCell(new_r, 0)
 
     def _on_move_row_down(self):
         """Move selected row(s) down, preserving order."""
@@ -581,9 +587,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = min(row_count - 1, r + 1)
-            for c in range(table.columnCount()):
-                idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QItemSelectionModel.Select)
+            # Select the entire moved row and keep focus on first column
+            try:
+                table.selectRow(new_r)
+            except Exception:
+                # Fallback: select cells if selectRow unavailable
+                for c in range(table.columnCount()):
+                    idx = table.model().index(new_r, c)
+                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            table.setCurrentCell(new_r, 0)
     
     # ========== Configuration Save/Load Methods ==========
     

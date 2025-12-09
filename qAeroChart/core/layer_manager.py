@@ -978,6 +978,11 @@ class LayerManager:
         runway = config.get('runway', {})
         runway_length = float(runway.get('length', 0))
         tch = float(runway.get('tch_rdh', 0))
+        # THR elevation in feet (used to convert absolute altitudes to THR-relative for drawing)
+        try:
+            thr_ft = float(runway.get('thr_elevation', 0))
+        except Exception:
+            thr_ft = 0.0
         self._dbg(f"Runway params -> length={runway_length}m, TCH={tch}m; profile_points={len(profile_points)}")
         
         # Initialize geometry calculator with vertical exaggeration (default 10x)
@@ -1032,7 +1037,19 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: === CREATING PROFILE LINE ===")
             print(f"PLUGIN qAeroChart: Number of profile points: {len(profile_points)}")
             
-            line_points = geometry.create_profile_line(profile_points)
+            # Use THR-relative elevation for drawing
+            profile_points_rel = []
+            for p in profile_points:
+                try:
+                    elev_ft = float(p.get('elevation_ft', 0))
+                except Exception:
+                    elev_ft = 0.0
+                rel_elev = elev_ft - thr_ft
+                q = dict(p)
+                q['elevation_ft'] = rel_elev
+                profile_points_rel.append(q)
+
+            line_points = geometry.create_profile_line(profile_points_rel)
             
             print(f"PLUGIN qAeroChart: Profile line returned {len(line_points) if line_points else 0} points")
             
@@ -1064,7 +1081,7 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
                 # Slope labels per segment
                 try:
-                    sorted_pts = sorted(profile_points, key=lambda p: float(p.get('distance_nm', 0)))
+                    sorted_pts = sorted(profile_points_rel, key=lambda p: float(p.get('distance_nm', 0)))
                     for i in range(len(sorted_pts)-1):
                         p1 = sorted_pts[i]
                         p2 = sorted_pts[i+1]
@@ -1075,8 +1092,8 @@ class LayerManager:
                         text = f"{deg:.1f}° ({grad_percent:.1f}%)"
                         mid_nm = (float(p1.get('distance_nm',0)) + float(p2.get('distance_nm',0)))/2.0
                         # Keep visual offset roughly constant despite VE
-                        mid_ft = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + (80.0/ve)
-                        pos = geometry.calculate_profile_point(mid_nm, mid_ft)
+                        mid_ft_rel = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + (80.0/ve)
+                        pos = geometry.calculate_profile_point(mid_nm, mid_ft_rel)
                         if layer_label:
                             lf = QgsFeature()
                             lf.setFields(layer_label.fields())
@@ -1136,8 +1153,10 @@ class LayerManager:
             max_elevation_ft = max(float(p.get('elevation_ft', 0)) for p in profile_points)
         except Exception:
             max_elevation_ft = 0.0
+        # Use THR-relative top for key vertical height
+        max_elevation_ft_rel = max_elevation_ft - thr_ft
         vertical_extra_m = 1000.0  # required extra height above highest point (meters)
-        vertical_top_ft = max_elevation_ft + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
+        vertical_top_ft = max_elevation_ft_rel + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
         self._dbg(f"Key verticals dynamic height -> max_elev_ft={max_elevation_ft:.2f} ft, extra={vertical_extra_m} m, top_ft={vertical_top_ft:.2f} ft")
         for point_data in profile_points:
             try:
@@ -1148,7 +1167,8 @@ class LayerManager:
                 notes = point_data.get('notes', '')
                 
                 # Calculate cartesian position
-                point_xy = geometry.calculate_profile_point(distance_nm, elevation_ft)
+                # Draw using THR-relative elevation
+                point_xy = geometry.calculate_profile_point(distance_nm, elevation_ft - thr_ft)
                 
                 # Prepare point symbol
                 if layer_point:
@@ -1160,6 +1180,7 @@ class LayerManager:
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
+                    # Keep stored attribute as absolute MSL elevation
                     feat.setAttribute("elevation", float(elevation_ft))
                     feat.setAttribute("notes", notes)
                     point_features.append(feat)
@@ -1304,7 +1325,8 @@ class LayerManager:
                     d1 = float(oca_single.get('from_nm', 0))
                     d2 = float(oca_single.get('to_nm', 0))
                     hft = float(oca_single.get('oca_ft', oca_single.get('height_ft', 0)))
-                    poly = geometry.create_oca_box(d1, d2, hft)
+                    # Draw height relative to THR
+                    poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
                     feat = QgsFeature()
                     feat.setFields(layer_moca.fields())
                     feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
@@ -1325,7 +1347,7 @@ class LayerManager:
                             d1 = float(seg.get('from_nm', seg.get('from', 0)))
                             d2 = float(seg.get('to_nm', seg.get('to', 0)))
                             hft = float(seg.get('oca_ft', seg.get('height_ft', 0)))
-                            poly = geometry.create_oca_box(d1, d2, hft)
+                            poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
                             feat = QgsFeature()
                             feat.setFields(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
@@ -1351,7 +1373,7 @@ class LayerManager:
                                 d1 = float(seg.get('from_nm', seg.get('from', 0)))
                                 d2 = float(seg.get('to_nm', seg.get('to', 0)))
                                 hft = float(seg.get('moca_ft', seg.get('height_ft', 0)))
-                                poly = geometry.create_oca_box(d1, d2, hft)
+                                poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
                                 feat = QgsFeature()
                                 feat.setFields(layer_moca.fields())
                                 feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
@@ -1379,7 +1401,7 @@ class LayerManager:
                             dist1_nm = float(point1.get('distance_nm', 0))
                             dist2_nm = float(point2.get('distance_nm', 0))
                             print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
-                            moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value)
+                            moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value - thr_ft)
                             print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
                             if layer_moca:
                                 feat = QgsFeature()
@@ -1414,7 +1436,7 @@ class LayerManager:
                     print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
                     
                     # create_oca_box returns 5 points (closed polygon) for hatched area
-                    moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value)
+                    moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value - thr_ft)
                     
                     print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
                     

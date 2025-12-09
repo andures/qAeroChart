@@ -1043,6 +1043,11 @@ class LayerManager:
         runway = config.get('runway', {})
         runway_length = float(runway.get('length', 0))
         tch = float(runway.get('tch_rdh', 0))
+        # THR elevation in feet (used to convert absolute altitudes to THR-relative for drawing)
+        try:
+            thr_ft = float(runway.get('thr_elevation', 0))
+        except Exception:
+            thr_ft = 0.0
         self._dbg(f"Runway params -> length={runway_length}m, TCH={tch}m; profile_points={len(profile_points)}")
         
         # Initialize geometry calculator with vertical exaggeration (default 10x)
@@ -1099,7 +1104,19 @@ class LayerManager:
             print(f"PLUGIN qAeroChart: === CREATING PROFILE LINE ===")
             print(f"PLUGIN qAeroChart: Number of profile points: {len(profile_points)}")
             
-            line_points = geometry.create_profile_line(profile_points)
+            # Use THR-relative elevation for drawing
+            profile_points_rel = []
+            for p in profile_points:
+                try:
+                    elev_ft = float(p.get('elevation_ft', 0))
+                except Exception:
+                    elev_ft = 0.0
+                rel_elev = elev_ft - thr_ft
+                q = dict(p)
+                q['elevation_ft'] = rel_elev
+                profile_points_rel.append(q)
+
+            line_points = geometry.create_profile_line(profile_points_rel)
             
             print(f"PLUGIN qAeroChart: Profile line returned {len(line_points) if line_points else 0} points")
             
@@ -1131,7 +1148,7 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: ✅ Profile line feature added to batch")
                 # Slope labels per segment
                 try:
-                    sorted_pts = sorted(profile_points, key=lambda p: float(p.get('distance_nm', 0)))
+                    sorted_pts = sorted(profile_points_rel, key=lambda p: float(p.get('distance_nm', 0)))
                     for i in range(len(sorted_pts)-1):
                         p1 = sorted_pts[i]
                         p2 = sorted_pts[i+1]
@@ -1142,8 +1159,8 @@ class LayerManager:
                         text = f"{deg:.1f}° ({grad_percent:.1f}%)"
                         mid_nm = (float(p1.get('distance_nm',0)) + float(p2.get('distance_nm',0)))/2.0
                         # Keep visual offset roughly constant despite VE
-                        mid_ft = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + (80.0/ve)
-                        pos = geometry.calculate_profile_point(mid_nm, mid_ft)
+                        mid_ft_rel = (float(p1.get('elevation_ft',0)) + float(p2.get('elevation_ft',0)))/2.0 + (80.0/ve)
+                        pos = geometry.calculate_profile_point(mid_nm, mid_ft_rel)
                         if layer_label:
                             lf = QgsFeature()
                             lf.setFields(layer_label.fields())
@@ -1206,8 +1223,10 @@ class LayerManager:
             max_elevation_ft = max(float(p.get('elevation_ft', 0)) for p in profile_points)
         except Exception:
             max_elevation_ft = 0.0
+        # Use THR-relative top for key vertical height
+        max_elevation_ft_rel = max_elevation_ft - thr_ft
         vertical_extra_m = 1000.0  # required extra height above highest point (meters)
-        vertical_top_ft = max_elevation_ft + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
+        vertical_top_ft = max_elevation_ft_rel + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
         self._dbg(f"Key verticals dynamic height -> max_elev_ft={max_elevation_ft:.2f} ft, extra={vertical_extra_m} m, top_ft={vertical_top_ft:.2f} ft")
         self._dbg("PHASE: POINTS & LABELS start")
         for point_data in profile_points:
@@ -1219,7 +1238,8 @@ class LayerManager:
                 notes = point_data.get('notes', '')
                 
                 # Calculate cartesian position
-                point_xy = geometry.calculate_profile_point(distance_nm, elevation_ft)
+                # Draw using THR-relative elevation
+                point_xy = geometry.calculate_profile_point(distance_nm, elevation_ft - thr_ft)
                 
                 # Prepare point symbol
                 if layer_point:
@@ -1231,6 +1251,7 @@ class LayerManager:
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
+                    # Keep stored attribute as absolute MSL elevation
                     feat.setAttribute("elevation", float(elevation_ft))
                     feat.setAttribute("notes", notes)
                     point_features.append(feat)
@@ -1248,27 +1269,28 @@ class LayerManager:
                     feat.setAttribute("font_size", 10)
                     label_features.append(feat)
 
-                # Add key verticals for known names (FAF/IF/MAPT)
-                if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
-                    try:
-                        bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # Dynamic height: highest elevation (subject to VE) + 1000 m NOT exaggerated (Issue #16 last comment)
-                        top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
-                        top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
-                        self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
-                        if self.layers.get(self.LAYER_KEY_VLINES):
-                            lyr = self.layers[self.LAYER_KEY_VLINES]
-                            feat_v = QgsFeature()
-                            feat_v.setFields(lyr.fields())
-                            feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                            if len(lyr.fields())>=3:
-                                feat_v.setAttribute("line_type", "key")
-                                feat_v.setAttribute("segment_name", point_name)
-                                feat_v.setAttribute("gradient", 0.0)
-                            self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
-                            key_vertical_features.append(feat_v)
-                    except Exception as e:
-                        print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
+                # Add key verticals for all points (fix for #45):
+                # Always draw a vertical from baseline to slightly above the max elevation,
+                # so points are visually aligned and consistent across naming schemes.
+                try:
+                    bottom = geometry.calculate_profile_point(distance_nm, 0.0)
+                    # Dynamic height: highest elevation (subject to VE) + 1000 m (not exaggerated)
+                    top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
+                    top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
+                    self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
+                    if self.layers.get(self.LAYER_KEY_VLINES):
+                        lyr = self.layers[self.LAYER_KEY_VLINES]
+                        feat_v = QgsFeature()
+                        feat_v.setFields(lyr.fields())
+                        feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
+                        if len(lyr.fields())>=3:
+                            feat_v.setAttribute("line_type", "key")
+                            feat_v.setAttribute("segment_name", point_name)
+                            feat_v.setAttribute("gradient", 0.0)
+                        self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
+                        key_vertical_features.append(feat_v)
+                except Exception as e:
+                    print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
                 
                 print(f"PLUGIN qAeroChart: Prepared point '{point_name}' at {distance_nm} NM / {elevation_ft} ft")
                 
@@ -1367,8 +1389,27 @@ class LayerManager:
         except Exception:
             pass
 
-        # Prefer explicit MOCA segments
-        if has_explicit_moca:
+        if has_oca:
+            # Draw only OCA and skip all MOCA to avoid overlap
+            try:
+                oca_single = config.get('oca') if config else None
+                if oca_single and self.layers.get(self.LAYER_MOCA):
+                    d1 = float(oca_single.get('from_nm', 0))
+                    d2 = float(oca_single.get('to_nm', 0))
+                    hft = float(oca_single.get('oca_ft', oca_single.get('height_ft', 0)))
+                    # Draw height relative to THR
+                    poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
+                    feat = QgsFeature()
+                    feat.setFields(layer_moca.fields())
+                    feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                    feat.setAttribute("moca", float(hft))
+                    feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                    feat.setAttribute("clearance", 0.0)
+                    self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
+                    moca_features.append(feat)
+                    print(f"PLUGIN qAeroChart: Added OCA polygon {d1}-{d2} NM @ {hft} ft")
+            except Exception as e:
+                print(f"PLUGIN qAeroChart WARNING: OCA single processing failed: {e}")
             try:
                 explicit_moca = config.get('moca_segments', [])
                 if explicit_moca and layer_moca:
@@ -1377,8 +1418,8 @@ class LayerManager:
                         try:
                             d1 = float(seg.get('from_nm', seg.get('from', 0)))
                             d2 = float(seg.get('to_nm', seg.get('to', 0)))
-                            hft = float(seg.get('moca_ft', seg.get('height_ft', 0)))
-                            poly = geometry.create_oca_box(d1, d2, hft)
+                            hft = float(seg.get('oca_ft', seg.get('height_ft', 0)))
+                            poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
                             feat = QgsFeature()
                             feat.setFields(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
@@ -1392,37 +1433,123 @@ class LayerManager:
             except Exception as e:
                 print(f"PLUGIN qAeroChart WARNING: explicit MOCA processing failed: {e}")
         else:
-            print(f"PLUGIN qAeroChart: Processing {len(profile_points)-1} possible MOCA segments (per-point)")
-            # Fallback: per-point MOCA between consecutive points
-            for i in range(len(profile_points) - 1):
-                point1 = profile_points[i]
-                point2 = profile_points[i + 1]
-                moca_ft = point1.get('moca_ft', '')
-                print(f"PLUGIN qAeroChart: Segment {i}: {point1.get('point_name','')} → {point2.get('point_name','')}, MOCA={moca_ft}")
-                if moca_ft and moca_ft.strip():
-                    try:
-                        moca_value = float(moca_ft)
-                        dist1_nm = float(point1.get('distance_nm', 0))
-                        dist2_nm = float(point2.get('distance_nm', 0))
-                        print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
-                        moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value)
-                        print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
-                        if layer_moca:
-                            feat = QgsFeature()
-                            feat.setFields(layer_moca.fields())
-                            geom = QgsGeometry.fromPolygonXY([moca_polygon])
-                            feat.setGeometry(geom)
-                            feat.setAttribute("moca", float(moca_value))
-                            feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
-                            feat.setAttribute("clearance", 0.0)
-                            self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
-                            moca_features.append(feat)
-                            print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
-                    except (ValueError, TypeError) as e:
-                        print(f"PLUGIN qAeroChart: ❌ Could not create MOCA for segment: {e}")
-                        continue
+            # No OCA provided; choose between explicit MOCA (preferred) or per-point MOCA
+            if has_explicit_moca:
+                try:
+                    explicit_moca = config.get('moca_segments', [])
+                    if explicit_moca and layer_moca:
+                        print(f"PLUGIN qAeroChart: Processing explicit MOCA segments: {len(explicit_moca)}")
+                        for seg in explicit_moca:
+                            try:
+                                d1 = float(seg.get('from_nm', seg.get('from', 0)))
+                                d2 = float(seg.get('to_nm', seg.get('to', 0)))
+                                hft = float(seg.get('moca_ft', seg.get('height_ft', 0)))
+                                poly = geometry.create_oca_box(d1, d2, hft - thr_ft)
+                                feat = QgsFeature()
+                                feat.setFields(layer_moca.fields())
+                                feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
+                                # Set attributes by name and ensure id is assigned
+                                feat.setAttribute("moca", float(hft))
+                                feat.setAttribute("segment_name", f"{d1}-{d2}NM")
+                                feat.setAttribute("clearance", 0.0)
+                                self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
+                                moca_features.append(feat)
+                            except Exception as e:
+                                print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
+                except Exception as e:
+                    print(f"PLUGIN qAeroChart WARNING: explicit MOCA processing failed: {e}")
+            else:
+                print(f"PLUGIN qAeroChart: Processing {len(profile_points)-1} possible MOCA segments (per-point)")
+                # fall back to per-point MOCA between consecutive points
+                for i in range(len(profile_points) - 1):
+                    point1 = profile_points[i]
+                    point2 = profile_points[i + 1]
+                    moca_ft = point1.get('moca_ft', '')
+                    print(f"PLUGIN qAeroChart: Segment {i}: {point1.get('point_name','')} → {point2.get('point_name','')}, MOCA={moca_ft}")
+                    if moca_ft and moca_ft.strip():
+                        try:
+                            moca_value = float(moca_ft)
+                            dist1_nm = float(point1.get('distance_nm', 0))
+                            dist2_nm = float(point2.get('distance_nm', 0))
+                            print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
+                            moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value - thr_ft)
+                            print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
+                            if layer_moca:
+                                feat = QgsFeature()
+                                feat.setFields(layer_moca.fields())
+                                geom = QgsGeometry.fromPolygonXY([moca_polygon])
+                                feat.setGeometry(geom)
+                                feat.setAttribute("moca", float(moca_value))
+                                feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
+                                feat.setAttribute("clearance", 0.0)
+                                self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
+                                moca_features.append(feat)
+                                print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
+                        except (ValueError, TypeError) as e:
+                            print(f"PLUGIN qAeroChart: ❌ Could not create MOCA for segment: {e}")
+                            continue
         
-        # (Per-point expansion with vertex prints removed to simplify logging per client request)
+        for i in range(len(profile_points) - 1):
+            if has_explicit_moca:
+                break
+            point1 = profile_points[i]
+            point2 = profile_points[i + 1]
+            
+            moca_ft = point1.get('moca_ft', '')
+            print(f"PLUGIN qAeroChart: Segment {i}: {point1.get('point_name','')} → {point2.get('point_name','')}, MOCA={moca_ft}")
+            
+            if moca_ft and moca_ft.strip():
+                try:
+                    moca_value = float(moca_ft)
+                    dist1_nm = float(point1.get('distance_nm', 0))
+                    dist2_nm = float(point2.get('distance_nm', 0))
+                    
+                    print(f"PLUGIN qAeroChart:   Creating MOCA: {dist1_nm}NM to {dist2_nm}NM at {moca_value}ft")
+                    
+                    # create_oca_box returns 5 points (closed polygon) for hatched area
+                    moca_polygon = geometry.create_oca_box(dist1_nm, dist2_nm, moca_value - thr_ft)
+                    
+                    print(f"PLUGIN qAeroChart:   MOCA polygon has {len(moca_polygon)} points")
+                    
+                    # Debug: Print polygon vertices
+                    for j, pt in enumerate(moca_polygon):
+                        print(f"PLUGIN qAeroChart:     Vertex {j}: X={pt.x():.2f}, Y={pt.y():.2f}")
+                    
+                    if layer_moca:
+                        feat = QgsFeature()
+                        feat.setFields(layer_moca.fields())
+                        # Create polygon geometry
+                        geom = QgsGeometry.fromPolygonXY([moca_polygon])
+                        
+                        # Validate geometry
+                        if geom.isGeosValid():
+                            print(f"PLUGIN qAeroChart:   ✅ MOCA polygon geometry is VALID")
+                        else:
+                            print(f"PLUGIN qAeroChart:   ❌ MOCA polygon geometry is INVALID: {geom.lastError()}")
+                        
+                        print(f"PLUGIN qAeroChart:   Geometry type: {geom.type()}, Area: {geom.area():.2f}")
+                        
+                        feat.setGeometry(geom)
+                        try:
+                            feat.setAttribute("id", next_id[self.LAYER_MOCA]); next_id[self.LAYER_MOCA] += 1
+                        except Exception:
+                            pass
+                        feat.setAttribute("moca", float(moca_value))
+                        feat.setAttribute("segment_name", f"{point1.get('point_name', '')} - {point2.get('point_name', '')}")
+                        feat.setAttribute("clearance", 0.0)
+                        self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
+                        moca_features.append(feat)
+                        print(f"PLUGIN qAeroChart:   ✅ MOCA feature added to batch")
+                    else:
+                        print(f"PLUGIN qAeroChart:   ❌ layer_moca is None!")
+                        
+                except (ValueError, TypeError) as e:
+                    print(f"PLUGIN qAeroChart: ❌ Could not create MOCA for segment: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+            else:
+                print(f"PLUGIN qAeroChart:   ⚠️ No MOCA value for this segment")
 
         # (Note) explicit MOCA handled above only when no OCA is present.
         self._dbg("PHASE: MOCA/OCA end")

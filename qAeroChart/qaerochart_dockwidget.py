@@ -24,7 +24,7 @@
 import os
 
 from qgis.PyQt import QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal, Qt
+from qgis.PyQt.QtCore import pyqtSignal, Qt, QItemSelectionModel
 from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut
 from qgis.PyQt.QtGui import QKeySequence
 from qgis.core import Qgis, QgsPointXY
@@ -71,6 +71,12 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Connect list selection
         self.listWidgetProfiles.itemSelectionChanged.connect(self._on_profile_selection_changed)
+        # Enable context menu to rename without recreating
+        try:
+            self.listWidgetProfiles.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.listWidgetProfiles.customContextMenuRequested.connect(self._on_profiles_context_menu)
+        except Exception:
+            pass
         # F2 to rename selected profile
         try:
             self._rename_shortcut = QShortcut(QKeySequence(Qt.Key_F2), self.listWidgetProfiles)
@@ -229,6 +235,23 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self._refresh_profile_list()
         print("PLUGIN qAeroChart: Profile list initialized")
+
+    def _on_profiles_context_menu(self, pos):
+        """Show context menu for profiles list with Rename action."""
+        try:
+            menu = QtWidgets.QMenu(self.listWidgetProfiles)
+            act_rename = menu.addAction("Rename… (F2)")
+            act_delete = menu.addAction("Delete")
+            act_draw = menu.addAction("Draw")
+            action = menu.exec_(self.listWidgetProfiles.mapToGlobal(pos))
+            if action == act_rename:
+                self.rename_selected_profile()
+            elif action == act_delete:
+                self.delete_profile()
+            elif action == act_draw:
+                self.draw_profile()
+        except Exception as e:
+            print(f"PLUGIN qAeroChart WARNING: Context menu failed: {e}")
     
     def _refresh_profile_list(self):
         """Refresh the profile list from saved profiles."""
@@ -533,9 +556,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = max(0, r - 1)
-            for c in range(table.columnCount()):
-                idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QItemSelectionModel.Select)
+            # Select the entire moved row and keep focus on first column
+            try:
+                table.selectRow(new_r)
+            except Exception:
+                # Fallback: select cells if selectRow unavailable
+                for c in range(table.columnCount()):
+                    idx = table.model().index(new_r, c)
+                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            table.setCurrentCell(new_r, 0)
 
     def _on_move_row_down(self):
         """Move selected row(s) down, preserving order."""
@@ -558,9 +587,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = min(row_count - 1, r + 1)
-            for c in range(table.columnCount()):
-                idx = table.model().index(new_r, c)
-                table.selectionModel().select(idx, QItemSelectionModel.Select)
+            # Select the entire moved row and keep focus on first column
+            try:
+                table.selectRow(new_r)
+            except Exception:
+                # Fallback: select cells if selectRow unavailable
+                for c in range(table.columnCount()):
+                    idx = table.model().index(new_r, c)
+                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            table.setCurrentCell(new_r, 0)
     
     # ========== Configuration Save/Load Methods ==========
     

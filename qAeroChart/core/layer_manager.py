@@ -85,124 +85,124 @@ class LayerManager:
         except Exception:
             print("PLUGIN qAeroChart: LayerManager initialized (CRS unknown)")
 
-    # ------------- Internal helpers -------------
-    def _log(self, message, level="INFO"):
-        try:
-            print(f"[qAeroChart][{level}] {message}")
-        except Exception:
-            # best-effort logging to avoid breaking flows
-            pass
-
-    def _dbg(self, message):
-        if self.debug:
-            self._log(message, level="DEBUG")
-
-    def _crs_guard(self, *, enforce_block=False, show_message=True):
+    def _dbg(self, msg: str):
         """
-        Check CRS suitability.
-        - If geographic CRS (degrees), optionally block further actions per Issue #13.
-        - Always inform user via message bar.
-        
+        Lightweight debug logger. Prints message when `self.debug` is True.
+
         Args:
-            enforce_block (bool): When True, show a red error and signal caller to abort.
-        
+            msg (str): Message to log.
+        """
+        try:
+            if getattr(self, 'debug', False):
+                print(f"PLUGIN qAeroChart DEBUG: {msg}")
+        except Exception:
+            # Avoid any logging-related crashes
+            pass
+
+    def _crs_guard(self, enforce_block: bool = True, show_message: bool = True) -> bool:
+        """
+        Ensure the project CRS is projected (not geographic) before drawing.
+
+        Args:
+            enforce_block (bool): When True, return False to block operations on invalid CRS.
+            show_message (bool): When True, show a message in QGIS message bar if available.
+
         Returns:
-            bool: True if CRS is acceptable (projected), False if geographic and enforce_block requested.
+            bool: True when CRS is acceptable or checking not enforced; False when blocked.
         """
         try:
-            current_crs = self.project.crs() if self.project else self.crs
-            if current_crs is None or not current_crs.isValid():
-                msg = "Project CRS is not set or invalid. Set a projected CRS (meters) before creating a profile."
-                self._log(msg, level="WARN")
+            proj = self.project.crs() if self.project else None
+            valid = bool(proj and proj.isValid())
+            is_geographic = False
+            units = ""
+            axis_map = ""
+            auth = ""
+            desc = ""
+            try:
+                if valid:
+                    auth = proj.authid()
+                    desc = proj.description()
+                    units = getattr(proj, 'mapUnits', lambda: None)()
+                    try:
+                        from qgis.core import QgsUnitTypes
+                        units_name = {
+                            QgsUnitTypes.DistanceMeters: 'meters',
+                            QgsUnitTypes.DistanceFeet: 'feet',
+                            QgsUnitTypes.DistanceDegrees: 'degrees',
+                            QgsUnitTypes.DistanceUnknownUnit: 'unknown',
+                        }.get(units, str(units))
+                    except Exception:
+                        units_name = str(units)
+                    # Primary detection: units
+                    # If map units are degrees → geographic; meters/feet → projected
+                    try:
+                        from qgis.core import QgsUnitTypes as UT
+                        is_geographic = (units == UT.DistanceDegrees)
+                        self._dbg(f"CRS check -> authid={auth} desc='{desc}' units={units_name} geo_by_units={is_geographic}")
+                    except Exception:
+                        pass
+                    # Secondary detection: coordinateSystem API if available
+                    try:
+                        from qgis.core import QgsCoordinateReferenceSystem
+                        coord_sys = proj.coordinateSystem()
+                        axis_map = str(getattr(proj, 'coordinateOperation', lambda: None)())
+                        self._dbg(f"CRS secondary -> coord_system={coord_sys} axis='{axis_map}'")
+                        # Only override if units were unknown
+                        if str(units_name) in ("unknown", "None"):
+                            is_geographic = (coord_sys == QgsCoordinateReferenceSystem.Geographic)
+                    except Exception:
+                        # Fallback: patterns
+                        if str(units_name).lower() not in ("meters", "feet"):
+                            is_geographic = (auth.endswith(":4326") or "WGS 84" in (desc or ""))
+                        self._dbg(f"CRS fallback -> authid={auth} desc='{desc}' units={units_name} geo={is_geographic}")
+            except Exception as diage:
+                self._dbg(f"CRS diagnostics failed: {diage}")
+
+            ok = valid and not is_geographic
+            self._dbg(f"CRS guard result -> valid={valid} geographic={is_geographic} ok={ok} authid={auth} units={units} desc='{desc}' axis='{axis_map}'")
+
+            if not ok and show_message:
                 try:
-                    if show_message and self.iface:
-                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
+                    if self.iface:
+                        self.iface.messageBar().pushWarning(
+                            "qAeroChart",
+                            f"Projected CRS required. Current: {auth} ({desc}). Switch to a projected CRS (meters/feet)."
+                        )
                 except Exception:
                     pass
-                return False if enforce_block else True
 
-            if current_crs.isGeographic():
-                msg = (
-                    f"Project CRS {current_crs.authid()} is geographic (degrees). "
-                    "Set a projected CRS (meters) and retry. Profile creation is blocked."
-                )
-                self._log(msg, level="WARN")
-                try:
-                    if show_message and self.iface:
-                        # Red bar
-                        self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Critical, duration=8)
-                except Exception:
-                    pass
-                return False if enforce_block else True
+            if enforce_block:
+                return ok
             return True
         except Exception as e:
-            self._log(f"CRS guard check failed: {e}", level="WARN")
-            return True
+            self._dbg(f"CRS guard failed: {e}")
+            return not enforce_block
 
-    def _current_project_crs(self):
-        """Return the current project CRS if valid, else fallback to self.crs."""
-        try:
-            if self.project and self.project.crs() and self.project.crs().isValid():
-                return self.project.crs()
-        except Exception:
-            pass
-        return self.crs
+    def _log(self, msg: str, level: str = "INFO"):
+        """
+        General logger with level. Uses QGIS message bar when available.
 
-    def _crs_param_for_uri(self, crs_obj):
-        """Build a robust CRS parameter for memory layer URI.
-        Prefer EPSG code if available; fallback to authid; else return None.
+        Args:
+            msg (str): Message text.
+            level (str): One of "INFO", "WARN", "ERROR".
         """
         try:
-            if not crs_obj:
-                return None
-            epsg = crs_obj.postgisSrid()
-            if isinstance(epsg, int) and epsg > 0:
-                return f"EPSG:{epsg}"
-            auth = crs_obj.authid()
-            if auth:
-                return auth
+            level_upper = (level or "INFO").upper()
+            if self.iface:
+                from qgis.core import Qgis
+                if level_upper == "ERROR":
+                    self.iface.messageBar().pushCritical("qAeroChart", msg)
+                elif level_upper == "WARN":
+                    self.iface.messageBar().pushWarning("qAeroChart", msg)
+                else:
+                    self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Info, duration=4)
+            print(f"PLUGIN qAeroChart {level_upper}: {msg}")
         except Exception:
-            pass
-        return None
-
-    def _ensure_layer_crs(self, layer):
-        """Force-assign current project CRS to a layer if missing or different.
-        This double-check mitigates cases where provider URI is ignored.
-        """
-        try:
-            proj_crs = self._current_project_crs()
-            if not proj_crs or not isinstance(layer, QgsVectorLayer):
-                return
-            # If layer has no CRS or a different one, set it explicitly
-            if not layer.crs().isValid() or layer.crs() != proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception as e:
-            self._log(f"Could not ensure CRS on layer '{getattr(layer, 'name', lambda: '')()}': {e}", level="WARN")
-    
-    def _create_memory_layer(self, geom_type: str, name: str, *, id_type: QVariant = QVariant.Int) -> QgsVectorLayer:
-        """Create a memory layer with the live project CRS and an 'id' field.
-        geom_type: 'Point' | 'LineString' | 'Polygon'
-        id_type: QVariant.Int (default) or QVariant.String, depending on layer schema
-        """
-        proj_crs = self._current_project_crs()
-        crs_param = self._crs_param_for_uri(proj_crs)
-        uri = f"{geom_type}?crs={crs_param}" if crs_param else geom_type
-        layer = QgsVectorLayer(uri, name, "memory")
-        try:
-            if proj_crs:
-                layer.setCrs(proj_crs)
-        except Exception:
-            pass
-        # Ensure ID field exists first
-        try:
-            provider = layer.dataProvider()
-            # Only add if not present
-            if provider and layer.fields().indexOf("id") < 0:
-                provider.addAttributes([QgsField("id", id_type)])
-                layer.updateFields()
-        except Exception:
-            pass
-        return layer
+            # Ensure logging never breaks execution
+            try:
+                print(f"PLUGIN qAeroChart {level.upper()}: {msg}")
+            except Exception:
+                pass
 
     def _assign_feature_id(self, feature, layer_key, id_tracker):
         """
@@ -246,6 +246,57 @@ class LayerManager:
             feature.setAttribute("id", next_val)
         except Exception as e:
             self._dbg(f"Could not assign single feature id: {e}")
+
+    def _create_memory_layer(self, geom_type: str, name: str, *, id_type=QVariant.Int) -> QgsVectorLayer:
+        """Create a memory layer with the given geometry type and standard 'id' field.
+
+        Args:
+            geom_type (str): One of 'Point', 'LineString', 'Polygon'.
+            name (str): Layer name to assign.
+            id_type: QVariant type for 'id' field (default Int; String for some layers).
+
+        Returns:
+            QgsVectorLayer: Newly created memory layer with project CRS applied.
+        """
+        try:
+            # Build URI like 'Point?crs=EPSG:XXXX'
+            geom = geom_type.strip()
+            if geom not in {"Point", "LineString", "Polygon"}:
+                geom = "Point"
+            # Prefer live project CRS
+            proj_crs = self.project.crs() if self.project else QgsCoordinateReferenceSystem()
+            crs_auth = proj_crs.authid() if proj_crs and proj_crs.isValid() else "EPSG:4326"
+            uri = f"{geom}?crs={crs_auth}"
+            layer = QgsVectorLayer(uri, name, "memory")
+            # Add standard 'id' field
+            provider = layer.dataProvider()
+            provider.addAttributes([QgsField("id", id_type)])
+            layer.updateFields()
+            # Ensure CRS is applied
+            self._ensure_layer_crs(layer)
+            return layer
+        except Exception as e:
+            self._log(f"Failed to create memory layer '{name}': {e}", level="ERROR")
+            # Return a minimal valid point layer as fallback
+            try:
+                layer = QgsVectorLayer("Point?crs=EPSG:4326", name, "memory")
+                provider = layer.dataProvider()
+                provider.addAttributes([QgsField("id", id_type)])
+                layer.updateFields()
+                return layer
+            except Exception:
+                return None
+
+    def _ensure_layer_crs(self, layer: QgsVectorLayer):
+        """Apply the current project CRS to a layer if possible."""
+        try:
+            if not layer:
+                return
+            proj_crs = self.project.crs() if self.project else None
+            if proj_crs and proj_crs.isValid():
+                layer.setCrs(proj_crs)
+        except Exception as e:
+            self._dbg(f"Could not set layer CRS: {e}")
     
     def create_all_layers(self, config=None):
         """
@@ -266,8 +317,14 @@ class LayerManager:
 
         self._dbg("Starting create_all_layers()")
         print("PLUGIN qAeroChart: Creating all profile layers...")
-        # Enforce projected CRS; block if geographic (Issue #13). Show a message here, too, for clarity.
-        if not self._crs_guard(enforce_block=True, show_message=True):
+        # Enforce projected CRS; allow override via style.allow_geographic
+        allow_geo = False
+        try:
+            allow_geo = bool(config.get('style', {}).get('allow_geographic', False)) if isinstance(config, dict) else False
+        except Exception:
+            allow_geo = False
+        self._dbg(f"create_all_layers: allow_geographic={allow_geo}")
+        if not self._crs_guard(enforce_block=(not allow_geo), show_message=True):
             self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
             return {}
         
@@ -953,9 +1010,17 @@ class LayerManager:
         """
         self._dbg("Starting populate_layers_from_config()")
         print("PLUGIN qAeroChart: Populating layers from config v2.0...")
+        self._dbg("PHASE: BEGIN population")
         print(f"PLUGIN qAeroChart: Config keys: {list(config.keys())}")
         # Enforce projected CRS; block profile creation on geographic CRS (Issue #13). Show the message here only.
-        if not self._crs_guard(enforce_block=True, show_message=True):
+        # Respect same override inside population
+        allow_geo = False
+        try:
+            allow_geo = bool(config.get('style', {}).get('allow_geographic', False)) if isinstance(config, dict) else False
+        except Exception:
+            allow_geo = False
+        self._dbg(f"populate_layers_from_config: allow_geographic={allow_geo}")
+        if not self._crs_guard(enforce_block=(not allow_geo), show_message=True):
             print("PLUGIN qAeroChart ERROR: Profile population blocked due to geographic/invalid CRS")
             return False
         
@@ -1000,6 +1065,7 @@ class LayerManager:
             rwy_num = 0
         # If RWY direction <= 18 then draw right→left (dir_sign = -1), else left→right
         dir_sign = -1 if rwy_num and rwy_num <= 18 else 1
+        self._dbg(f"Geometry setup -> origin=({origin_point.x():.3f},{origin_point.y():.3f}) VE={ve} dir_sign={dir_sign} (RWY='{dir_text}')")
         geometry = ProfileChartGeometry(origin_point, vertical_exaggeration=ve, horizontal_direction=dir_sign)
         
         # BATCH OPERATIONS: Collect all features first, then add in bulk
@@ -1033,6 +1099,7 @@ class LayerManager:
         style = config.get('style', {}) if config else {}
         
         # 2. Prepare profile line
+        self._dbg("PHASE: PROFILE LINE start")
         if len(profile_points) >= 2:
             print(f"PLUGIN qAeroChart: === CREATING PROFILE LINE ===")
             print(f"PLUGIN qAeroChart: Number of profile points: {len(profile_points)}")
@@ -1110,8 +1177,10 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: ❌ Profile line NOT created (line_points={bool(line_points)}, layer_line={bool(layer_line)})")
         else:
             print(f"PLUGIN qAeroChart: ❌ Not enough points for profile line ({len(profile_points)} points)")
+        self._dbg("PHASE: PROFILE LINE end")
         
         # 3. Prepare runway line
+        self._dbg("PHASE: RUNWAY LINE start")
         if runway_length > 0:
             print(f"PLUGIN qAeroChart: === CREATING RUNWAY LINE ===")
             print(f"PLUGIN qAeroChart: Runway length: {runway_length}m, TCH: {tch}m")
@@ -1146,6 +1215,7 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart: ❌ Runway line NOT created")
         else:
             print(f"PLUGIN qAeroChart: ⚠️ Runway length is 0, skipping runway line")
+        self._dbg("PHASE: RUNWAY LINE end")
         
         # 4. Prepare profile points with symbols and labels
         # Compute dynamic vertical height reference for key vertical lines (Issue #16)
@@ -1158,6 +1228,7 @@ class LayerManager:
         vertical_extra_m = 1000.0  # required extra height above highest point (meters)
         vertical_top_ft = max_elevation_ft_rel + vertical_extra_m * ProfileChartGeometry.METERS_TO_FT
         self._dbg(f"Key verticals dynamic height -> max_elev_ft={max_elevation_ft:.2f} ft, extra={vertical_extra_m} m, top_ft={vertical_top_ft:.2f} ft")
+        self._dbg("PHASE: POINTS & LABELS start")
         for point_data in profile_points:
             try:
                 distance_nm = float(point_data.get('distance_nm', 0))
@@ -1228,6 +1299,7 @@ class LayerManager:
                 continue
         
         # 5. Prepare distance markers (tick line segments)
+        self._dbg("PHASE: DISTANCE MARKERS start")
         if profile_points:
             # Axis length: prefer explicit axis_max_nm in style, else use max point distance
             max_distance_nm = max(float(p.get('distance_nm', 0)) for p in profile_points)
@@ -1305,14 +1377,14 @@ class LayerManager:
                 except Exception as e:
                     print(f"PLUGIN qAeroChart WARNING: Could not create axis labels: {e}")
             # Grid layer removed (Issue #14): skipping creation of full-height vertical grid lines
+        self._dbg("PHASE: DISTANCE MARKERS end")
         
     # 6. Prepare MOCA polygons
-        print(f"PLUGIN qAeroChart: === CREATING MOCA/OCA HATCH AREAS ===")
-        # Decide precedence: OCA > explicit MOCA > per-point MOCA
-        has_oca = False
+        print(f"PLUGIN qAeroChart: === CREATING MOCA HATCH AREAS ===")
+        self._dbg("PHASE: MOCA/OCA start")
+        # Client requirement (#36): OCA removal → ignore any OCA config; render MOCA only
         has_explicit_moca = False
         try:
-            has_oca = bool(config.get('oca')) or bool(config.get('oca_segments'))
             has_explicit_moca = bool(config.get('moca_segments'))
         except Exception:
             pass
@@ -1339,10 +1411,10 @@ class LayerManager:
             except Exception as e:
                 print(f"PLUGIN qAeroChart WARNING: OCA single processing failed: {e}")
             try:
-                oca_segments = config.get('oca_segments', []) if config else []
-                if oca_segments and self.layers.get(self.LAYER_MOCA):
-                    print(f"PLUGIN qAeroChart: Processing OCA segments: {len(oca_segments)}")
-                    for seg in oca_segments:
+                explicit_moca = config.get('moca_segments', [])
+                if explicit_moca and layer_moca:
+                    print(f"PLUGIN qAeroChart: Processing explicit MOCA segments: {len(explicit_moca)}")
+                    for seg in explicit_moca:
                         try:
                             d1 = float(seg.get('from_nm', seg.get('from', 0)))
                             d2 = float(seg.get('to_nm', seg.get('to', 0)))
@@ -1352,15 +1424,14 @@ class LayerManager:
                             feat.setFields(layer_moca.fields())
                             feat.setGeometry(QgsGeometry.fromPolygonXY([poly]))
                             feat.setAttribute("moca", float(hft))
-                            feat.setAttribute("segment_name", f"OCA {d1}-{d2}NM")
+                            feat.setAttribute("segment_name", f"{d1}-{d2}NM")
                             feat.setAttribute("clearance", 0.0)
                             self._assign_feature_id(feat, self.LAYER_MOCA, next_id)
                             moca_features.append(feat)
                         except Exception as e:
-                            print(f"PLUGIN qAeroChart WARNING: Skipping OCA segment {seg}: {e}")
+                            print(f"PLUGIN qAeroChart WARNING: Skipping explicit MOCA segment {seg}: {e}")
             except Exception as e:
-                print(f"PLUGIN qAeroChart WARNING: OCA segments processing failed: {e}")
-            print("PLUGIN qAeroChart: OCA present → skipping all MOCA (explicit and per-point)")
+                print(f"PLUGIN qAeroChart WARNING: explicit MOCA processing failed: {e}")
         else:
             # No OCA provided; choose between explicit MOCA (preferred) or per-point MOCA
             if has_explicit_moca:
@@ -1481,27 +1552,33 @@ class LayerManager:
                 print(f"PLUGIN qAeroChart:   ⚠️ No MOCA value for this segment")
 
         # (Note) explicit MOCA handled above only when no OCA is present.
+        self._dbg("PHASE: MOCA/OCA end")
         
         # BATCH ADD: Add all features in bulk (single edit cycle per layer)
         print(f"PLUGIN qAeroChart: === BATCH ADDING FEATURES ===")
+        self._dbg("PHASE: BATCH ADD start")
         print(f"PLUGIN qAeroChart: Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, Dist: {len(dist_features)}, MOCA: {len(moca_features)}")
         
         if point_features and layer_point:
             layer_point.startEditing()
             success = layer_point.addFeatures(point_features)
-            layer_point.commitChanges()
+            commit_success = layer_point.commitChanges()
             layer_point.updateExtents()
             layer_point.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(point_features)} point features (success={success})")
+            if not commit_success:
+                print(f"PLUGIN qAeroChart: ❌ POINTS COMMIT FAILED! Errors: {layer_point.commitErrors()}")
+            print(f"PLUGIN qAeroChart: ✅ Added {len(point_features)} point features (addFeatures={success}, commit={commit_success})")
             self._dbg(f"Point layer now has {layer_point.featureCount()} features")
         
         if label_features and layer_label:
             layer_label.startEditing()
             success = layer_label.addFeatures(label_features)
-            layer_label.commitChanges()
+            commit_success = layer_label.commitChanges()
             layer_label.updateExtents()
             layer_label.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(label_features)} label features (success={success})")
+            if not commit_success:
+                print(f"PLUGIN qAeroChart: ❌ LABELS COMMIT FAILED! Errors: {layer_label.commitErrors()}")
+            print(f"PLUGIN qAeroChart: ✅ Added {len(label_features)} label features (addFeatures={success}, commit={commit_success})")
             self._dbg(f"Label layer now has {layer_label.featureCount()} features")
 
         if line_features and layer_line:
@@ -1567,10 +1644,12 @@ class LayerManager:
         if dist_features and layer_dist:
             layer_dist.startEditing()
             success = layer_dist.addFeatures(dist_features)
-            layer_dist.commitChanges()
+            commit_success = layer_dist.commitChanges()
             layer_dist.updateExtents()
             layer_dist.triggerRepaint()
-            print(f"PLUGIN qAeroChart: ✅ Added {len(dist_features)} distance markers (success={success})")
+            if not commit_success:
+                print(f"PLUGIN qAeroChart: ❌ DIST COMMIT FAILED! Errors: {layer_dist.commitErrors()}")
+            print(f"PLUGIN qAeroChart: ✅ Added {len(dist_features)} distance markers (addFeatures={success}, commit={commit_success})")
             self._dbg(f"Dist layer now has {layer_dist.featureCount()} features")
 
 
@@ -1615,6 +1694,8 @@ class LayerManager:
 
         # Baseline is added into profile_line (Issue #24); no separate baseline layer
 
+        self._dbg("PHASE: BATCH ADD end")
+
         # Force refresh of canvas
         if self.iface:
             self.iface.mapCanvas().refresh()
@@ -1632,6 +1713,7 @@ class LayerManager:
             # View scale enforcement removed (Issue #9)
 
         print("PLUGIN qAeroChart: === LAYER POPULATION COMPLETE ===")
+        self._dbg("PHASE: END population")
         self._dbg("Finished populate_layers_from_config()")
 
         return True

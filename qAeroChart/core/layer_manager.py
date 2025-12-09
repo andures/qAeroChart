@@ -1177,27 +1177,28 @@ class LayerManager:
                     feat.setAttribute("font_size", 10)
                     label_features.append(feat)
 
-                # Add key verticals for known names (FAF/IF/MAPT)
-                if point_name.strip().upper() in {"FAF", "IF", "MAPT", "MAP"}:
-                    try:
-                        bottom = geometry.calculate_profile_point(distance_nm, 0.0)
-                        # Dynamic height: highest elevation (subject to VE) + 1000 m NOT exaggerated (Issue #16 last comment)
-                        top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
-                        top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
-                        self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
-                        if self.layers.get(self.LAYER_KEY_VLINES):
-                            lyr = self.layers[self.LAYER_KEY_VLINES]
-                            feat_v = QgsFeature()
-                            feat_v.setFields(lyr.fields())
-                            feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
-                            if len(lyr.fields())>=3:
-                                feat_v.setAttribute("line_type", "key")
-                                feat_v.setAttribute("segment_name", point_name)
-                                feat_v.setAttribute("gradient", 0.0)
-                            self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
-                            key_vertical_features.append(feat_v)
-                    except Exception as e:
-                        print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
+                # Add key verticals for all points (fix for #45):
+                # Always draw a vertical from baseline to slightly above the max elevation,
+                # so points are visually aligned and consistent across naming schemes.
+                try:
+                    bottom = geometry.calculate_profile_point(distance_nm, 0.0)
+                    # Dynamic height: highest elevation (subject to VE) + 1000 m (not exaggerated)
+                    top_at_max = geometry.calculate_profile_point(distance_nm, max_elevation_ft)
+                    top = QgsPointXY(bottom.x(), top_at_max.y() + vertical_extra_m)
+                    self._dbg(f"Created key vertical for {point_name} at {distance_nm}NM: baseline_y={bottom.y():.2f}, top_y={top.y():.2f}")
+                    if self.layers.get(self.LAYER_KEY_VLINES):
+                        lyr = self.layers[self.LAYER_KEY_VLINES]
+                        feat_v = QgsFeature()
+                        feat_v.setFields(lyr.fields())
+                        feat_v.setGeometry(QgsGeometry.fromPolylineXY([bottom, top]))
+                        if len(lyr.fields())>=3:
+                            feat_v.setAttribute("line_type", "key")
+                            feat_v.setAttribute("segment_name", point_name)
+                            feat_v.setAttribute("gradient", 0.0)
+                        self._assign_feature_id(feat_v, self.LAYER_KEY_VLINES, next_id)
+                        key_vertical_features.append(feat_v)
+                except Exception as e:
+                    print(f"PLUGIN qAeroChart WARNING: could not create key vertical for {point_name}: {e}")
                 
                 print(f"PLUGIN qAeroChart: Prepared point '{point_name}' at {distance_nm} NM / {elevation_ft} ft")
                 

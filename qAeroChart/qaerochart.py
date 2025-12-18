@@ -257,6 +257,12 @@ class QAeroChart:
             if not self.vertical_scale_dock:
                 self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            else:
+                # Always start from the menu page to mimic profile flow
+                try:
+                    self.vertical_scale_dock.show_menu()
+                except Exception:
+                    pass
             self.vertical_scale_dock.show()
             self.vertical_scale_dock.raise_()
         except Exception as e:

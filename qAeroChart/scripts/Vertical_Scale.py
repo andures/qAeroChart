@@ -20,10 +20,18 @@ from qgis.core import (
     QgsPointXY,
     QgsProject,
     QgsVectorLayer,
+    QgsMarkerSymbol,
+    QgsSingleSymbolRenderer,
+    QgsPalLayerSettings,
+    QgsTextFormat,
+    QgsVectorLayerSimpleLabeling,
+    QgsNullSymbolRenderer,
+    QgsTextBufferSettings,
     Qgis,
 )
 from qgis.PyQt.QtCore import QVariant
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtGui import QColor, QFont
+from qgis.utils import iface
 
 # Editable parameters
 SCALE_DENOMINATOR = 10000  # default vertical scale 1:10 000
@@ -61,43 +69,50 @@ def run_vertical_scale(
     m_step: int = M_STEP,
     ft_max: int = FT_MAX,
     ft_step: int = FT_STEP,
+    *,
+    basepoint: QgsPoint = None,
+    angle: float = None,
+    name: str = "Vertical Scale",
 ):
     map_srid = iface.mapCanvas().mapSettings().destinationCrs().authid()
 
-    # Require a selected line to orient the scale
-    layer = iface.activeLayer()
-    if not layer or not layer.selectedFeatureCount():
-        iface.messageBar().pushMessage(
-            "Vertical Scale",
-            "Select a guide line feature before running the script.",
-            level=Qgis.Warning,
-            duration=4,
-        )
-        return
-    selection = layer.selectedFeatures()
-    geom = selection[0].geometry().asPolyline()
-    if not geom:
-        iface.messageBar().pushMessage(
-            "Vertical Scale",
-            "Selected feature is not a line.",
-            level=Qgis.Critical,
-            duration=4,
-        )
-        return
+    # If no basepoint/angle provided, fall back to selected guide line
+    if basepoint is None or angle is None:
+        layer = iface.activeLayer()
+        if not layer or not layer.selectedFeatureCount():
+            iface.messageBar().pushMessage(
+                "Vertical Scale",
+                "Select a guide line feature or set an origin/azimuth in the dock.",
+                level=Qgis.Warning,
+                duration=4,
+            )
+            return
+        selection = layer.selectedFeatures()
+        geom = selection[0].geometry().asPolyline()
+        if not geom:
+            iface.messageBar().pushMessage(
+                "Vertical Scale",
+                "Selected feature is not a line.",
+                level=Qgis.Critical,
+                duration=4,
+            )
+            return
 
-    start_point = QgsPoint(geom[0])
-    end_point = QgsPoint(geom[-1])
-    angle = start_point.azimuth(end_point)
+        start_point = QgsPoint(geom[0])
+        end_point = QgsPoint(geom[-1])
+        angle = start_point.azimuth(end_point)
+        basepoint = start_point
 
     factor = _scale_factor(scale_denominator)
-    basepoint = start_point.project(offset, angle - 90)
+    basepoint = basepoint if isinstance(basepoint, QgsPoint) else QgsPoint(basepoint)
+    basepoint = basepoint.project(offset, angle - 90)
 
     # Prepare layers
     line_fields = [QgsField('id', QVariant.String, len=255), QgsField('symbol', QVariant.String, len=25)]
     label_fields = [QgsField('id', QVariant.String, len=255), QgsField('txt_label', QVariant.String, len=50)]
 
-    line_layer = _create_layer("Vertical Scale", "Linestring", map_srid, line_fields)
-    label_layer = _create_layer("carto-vertical-scale-label", "Point", map_srid, label_fields)
+    line_layer = _create_layer(f"{name} - Lines", "Linestring", map_srid, line_fields)
+    label_layer = _create_layer(f"{name} - Labels", "Point", map_srid, label_fields)
 
     def add_line(points, symbol_val):
         f = QgsFeature()
@@ -119,9 +134,10 @@ def run_vertical_scale(
         p1 = p0.project(tick_len, angle + 90)
         meter_ticks.append(p0)
         add_line([p0, p1], "m_tick")
-        # label slightly beyond tick
-        p_label = p1.project(tick_len * 0.6, angle + 90)
-        add_label(p_label, str(val_m), f"m_{val_m}")
+        # label slightly beyond tick (skip max; we handle it separately to avoid duplicate)
+        if val_m < m_max:
+            p_label = p1.project(tick_len * 0.75, angle + 90)
+            add_label(p_label, str(val_m), f"m_{val_m}")
 
     # Feet side (left)
     feet_ticks = []
@@ -132,27 +148,47 @@ def run_vertical_scale(
         p1 = p0.project(tick_len, angle - 90)
         feet_ticks.append(p0)
         add_line([p0, p1], "ft_tick")
-        p_label = p1.project(tick_len * 0.6, angle - 90)
-        add_label(p_label, str(val_ft), f"ft_{val_ft}")
+        if val_ft < ft_max:
+            p_label = p1.project(tick_len * 0.75, angle - 90)
+            add_label(p_label, str(val_ft), f"ft_{val_ft}")
 
-    # Main line (use meter side extent)
+    # Main lines (draw both sides for a clearer dual scale)
     if meter_ticks:
         add_line(meter_ticks, "scale_line")
+    if feet_ticks:
+        add_line(feet_ticks, "scale_line_left")
+    # Optional middle connector for left scale bottom to base (visual anchor)
+    if feet_ticks:
+        add_line([feet_ticks[0], basepoint], "scale_line_left_bottom")
 
     # Top connector between sides
     if meter_ticks and feet_ticks:
         add_line([meter_ticks[-1], feet_ticks[-1]], "top_connect")
 
-    # Add static labels: units and title/scale at bottom
+    # Add static labels: numeric max on last tick; units on extra tick beyond
     try:
-        # Meters header near top right
-        top_m = meter_ticks[-1].project(tick_len * 1.2, angle + 90)
-        add_label(top_m, "METERS", "lbl_meters")
-        # Feet header near top left
-        top_ft = feet_ticks[-1].project(tick_len * 1.2, angle - 90)
-        add_label(top_ft, "FEET", "lbl_feet")
+        unit_offset = tick_len * 0.6
+        label_offset = tick_len * 0.75
+        unit_label_along = tick_len * 1.0
+        unit_label_up = tick_len * 0.3
+
+        # Meters: number at last tick; unit on an extra tick beyond
+        meters_top_val = meter_ticks[-1]
+        meters_top_tick = meters_top_val.project(tick_len, angle + 90)
+        add_label(meters_top_tick.project(label_offset, angle + 90), str(m_max), "lbl_m_max")
+        meters_unit_label = meters_top_val.project(unit_label_along, angle)
+        meters_unit_label = meters_unit_label.project(unit_label_up, angle + 90)
+        add_label(meters_unit_label, "METERS", "lbl_meters")
+
+        # Feet: number at last tick; unit on an extra tick beyond
+        feet_top_val = feet_ticks[-1]
+        feet_top_tick = feet_top_val.project(tick_len, angle - 90)
+        add_label(feet_top_tick.project(label_offset, angle - 90), str(ft_max), "lbl_ft_max")
+        feet_unit_label = feet_top_val.project(unit_label_along, angle + 180)
+        feet_unit_label = feet_unit_label.project(unit_label_up, angle - 90)
+        add_label(feet_unit_label, "FEET", "lbl_feet")
         # Bottom title
-        bottom = basepoint.project(-tick_len * 2.5, angle)
+        bottom = basepoint.project(-tick_len * 3.0, angle)
         add_label(bottom, "VERTICAL", "lbl_vertical")
         add_label(bottom.project(tick_len * 1.5, angle), "SCALE", "lbl_scale")
         add_label(bottom.project(tick_len * 3.0, angle), f"1:{int(scale_denominator):,}".replace(',', ' '), "lbl_ratio")
@@ -169,9 +205,46 @@ def run_vertical_scale(
     except Exception:
         pass
 
+    # Make point layer invisible (only labels visible)
+    try:
+        label_layer.setRenderer(QgsNullSymbolRenderer())
+    except Exception:
+        try:
+            pt_sym = QgsMarkerSymbol.createSimple({"color": "transparent", "size": "0"})
+            label_layer.setRenderer(QgsSingleSymbolRenderer(pt_sym))
+        except Exception:
+            pass
+
+    # Enable labeling for txt_label field so numbers/headers render
+    try:
+        pal = QgsPalLayerSettings()
+        pal.fieldName = "txt_label"
+        pal.isExpression = False
+        try:
+            pal.placement = Qgis.LabelPlacement.OverPoint
+        except Exception:
+            pal.placement = QgsPalLayerSettings.OverPoint
+        pal.enabled = True
+        fmt = QgsTextFormat()
+        fmt.setFont(QFont("Segoe UI", 8))
+        fmt.setSize(8)
+        fmt.setColor(QColor("black"))
+        buf = QgsTextBufferSettings()
+        buf.setEnabled(True)
+        buf.setSize(0.6)
+        buf.setColor(QColor("white"))
+        fmt.setBuffer(buf)
+        pal.setFormat(fmt)
+        label_layer.setLabelsEnabled(True)
+        label_layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
+        label_layer.triggerRepaint()
+    except Exception:
+        pass
+
     # Add to project under a group
     root = QgsProject.instance().layerTreeRoot()
-    group = root.findGroup("Vertical Scale") or root.addGroup("Vertical Scale")
+    group_name = name if name else "Vertical Scale"
+    group = root.findGroup(group_name) or root.addGroup(group_name)
     QgsProject.instance().addMapLayer(line_layer, False)
     QgsProject.instance().addMapLayer(label_layer, False)
     group.addLayer(line_layer)

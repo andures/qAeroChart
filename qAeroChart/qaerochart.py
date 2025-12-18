@@ -29,7 +29,7 @@ from qgis.PyQt.QtWidgets import QAction, QMenu
 
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
-from .vertical_scale_dialog import VerticalScaleDialog
+from .vertical_scale_dialog import VerticalScaleDockWidget
 import os.path
 
 
@@ -84,6 +84,7 @@ class QAeroChart:
         self.tools_toolbar = None
         self.generate_profile_action = None
         self.vertical_scale_action = None
+        self.vertical_scale_dock = None
         # Top-level menu
         self.top_menu = None
 
@@ -205,7 +206,7 @@ class QAeroChart:
         self.vertical_scale_action = QAction(QIcon(vs_icon_path), self.tr('Vertical Scale'), self.iface.mainWindow())
         self.vertical_scale_action.setObjectName('qAeroChartVerticalScaleAction')
         self.vertical_scale_action.setStatusTip(self.tr('Create vertical scale (meters/feet)'))
-        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dialog)
+        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
         self.tools_toolbar.addAction(self.vertical_scale_action)
 
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
@@ -251,15 +252,18 @@ class QAeroChart:
         self.layer_manager = LayerManager(self.iface)
         print("PLUGIN qAeroChart: Layer manager initialized")
 
-    def open_vertical_scale_dialog(self):
+    def open_vertical_scale_dock(self):
         try:
-            dlg = VerticalScaleDialog(self.iface)
-            dlg.exec_()
+            if not self.vertical_scale_dock:
+                self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            self.vertical_scale_dock.show()
+            self.vertical_scale_dock.raise_()
         except Exception as e:
             try:
-                self.iface.messageBar().pushCritical('qAeroChart', f'Could not open Vertical Scale dialog: {e}')
+                self.iface.messageBar().pushCritical('qAeroChart', f'Could not open Vertical Scale dock: {e}')
             except Exception:
-                print(f"PLUGIN qAeroChart ERROR: Could not open Vertical Scale dialog: {e}")
+                print(f"PLUGIN qAeroChart ERROR: Could not open Vertical Scale dock: {e}")
 
     # --------------------------------------------------------------------------
 

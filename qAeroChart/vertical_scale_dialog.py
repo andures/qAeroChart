@@ -82,6 +82,11 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         menu_layout.addWidget(menu_label)
 
         self.list_scales = QtWidgets.QListWidget()
+        self.list_scales.setStyleSheet(
+            "QListWidget::item { padding: 8px; border-bottom: 1px solid #e0e0e0; }\n"
+            "QListWidget::item:selected { background-color: #e3f2fd; color: black; }\n"
+            "QListWidget::item:hover { background-color: #f5f5f5; }"
+        )
         try:
             self.list_scales.setContextMenuPolicy(Qt.CustomContextMenu)
             self.list_scales.customContextMenuRequested.connect(self._on_list_context_menu)
@@ -102,18 +107,30 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
 
         menu_buttons = QHBoxLayout()
         menu_buttons.setSpacing(6)
-        self.btn_new = QPushButton("New Vertical Scale")
-        self.btn_run_selected = QPushButton("Run Selected")
-        self.btn_edit = QPushButton("Edit Selected")
+        self.btn_new = QPushButton("➕ New Scale")
+        self.btn_new.setMinimumHeight(35)
+        self.btn_new.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+
+        self.btn_run_selected = QPushButton("▶️ Run Selected")
+        self.btn_run_selected.setMinimumHeight(35)
+
+        self.btn_edit = QPushButton("✏️ Edit Selected")
+        self.btn_edit.setMinimumHeight(35)
+
+        self.btn_delete = QPushButton("🗑️ Delete")
+        self.btn_delete.setMinimumHeight(35)
+        self.btn_delete.setStyleSheet("background-color: #f44336; color: white;")
         self.btn_edit.setEnabled(False)
         self.btn_run_selected.setEnabled(False)
+        self.btn_delete.setEnabled(False)
         self.btn_new.clicked.connect(self._on_new_clicked)
         self.btn_edit.clicked.connect(self._on_edit_clicked)
         self.btn_run_selected.clicked.connect(self._on_run_selected)
-        menu_buttons.addStretch(1)
+        self.btn_delete.clicked.connect(self._on_delete_selected)
         menu_buttons.addWidget(self.btn_new)
         menu_buttons.addWidget(self.btn_run_selected)
         menu_buttons.addWidget(self.btn_edit)
+        menu_buttons.addWidget(self.btn_delete)
         grp_list_layout.addLayout(menu_buttons)
 
         menu_layout.addWidget(grp_list)
@@ -322,6 +339,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             has_items = bool(self.run_history)
             self.btn_edit.setEnabled(has_items)
             self.btn_run_selected.setEnabled(has_items)
+            self.btn_delete.setEnabled(has_items)
         except Exception:
             pass
 
@@ -385,14 +403,29 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             except Exception:
                 print(f"Vertical Scale ERROR: {e}")
 
+    def _on_delete_selected(self):
+        params = self._selected_history_params()
+        if not params:
+            return
+        sid = params.get("id")
+        if sid:
+            self.scale_manager.delete(sid)
+        self.run_history = [p for p in self.run_history if p.get("id") != sid]
+        self.current_scale_id = None
+        self._refresh_history()
+        self._update_edit_button()
+
     def _on_list_context_menu(self, pos):
         if not self.run_history:
             return
         menu = QtWidgets.QMenu(self.list_scales)
         act_rename = menu.addAction("Rename… (F2)")
+        act_delete = menu.addAction("Delete")
         action = menu.exec_(self.list_scales.mapToGlobal(pos))
         if action == act_rename:
             self._rename_selected()
+        elif action == act_delete:
+            self._on_delete_selected()
 
     def _rename_selected(self):
         params = self._selected_history_params()
@@ -431,6 +464,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             self.list_scales.addItem(item)
             self.current_scale_id = None
+            self._update_edit_button()
             return
         for idx, params in enumerate(self.run_history):
             name = params.get("name", "Vertical Scale")

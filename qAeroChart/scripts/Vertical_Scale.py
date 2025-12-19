@@ -107,6 +107,11 @@ def run_vertical_scale(
     basepoint = basepoint if isinstance(basepoint, QgsPoint) else QgsPoint(basepoint)
     basepoint = basepoint.project(offset, angle - 90)
 
+    # Split the spine into two rails (feet left, meters right) separated by half the tick length
+    half_spacing = tick_len * 0.5
+    base_left = basepoint.project(half_spacing, angle - 90)
+    base_right = basepoint.project(half_spacing, angle + 90)
+
     # Prepare layers
     line_fields = [QgsField('id', QVariant.String, len=255), QgsField('symbol', QVariant.String, len=25)]
     label_fields = [QgsField('id', QVariant.String, len=255), QgsField('txt_label', QVariant.String, len=50)]
@@ -130,7 +135,7 @@ def run_vertical_scale(
     meter_ticks = []
     for val_m in range(0, m_max + 1, m_step):
         dist = val_m * factor
-        p0 = basepoint.project(dist, angle)
+        p0 = base_right.project(dist, angle)
         p1 = p0.project(tick_len, angle + 90)
         meter_ticks.append(p0)
         add_line([p0, p1], "m_tick")
@@ -144,7 +149,7 @@ def run_vertical_scale(
     for val_ft in range(0, ft_max + 1, ft_step):
         meters = val_ft * 0.3048
         dist = meters * factor
-        p0 = basepoint.project(dist, angle)
+        p0 = base_left.project(dist, angle)
         p1 = p0.project(tick_len, angle - 90)
         feet_ticks.append(p0)
         add_line([p0, p1], "ft_tick")
@@ -152,18 +157,44 @@ def run_vertical_scale(
             p_label = p1.project(tick_len * 0.75, angle - 90)
             add_label(p_label, str(val_ft), f"ft_{val_ft}")
 
-    # Main lines (draw both sides for a clearer dual scale)
+    # Mid-step ticks for finer reading (half of each step) and secondary rails through their tips
+    small_tick_len = tick_len * 0.45
+    sec_offset = tick_len * 0.8  # extra offset to ensure secondary rail is visible (both sides)
+    meter_small_tips = []
+    feet_small_tips = []
+    for val_m in range(m_step // 2, m_max + 1, m_step):
+        dist = val_m * factor
+        p0 = base_right.project(dist, angle)
+        p1 = p0.project(small_tick_len, angle + 90)
+        add_line([p0, p1], "m_tick_small")
+        meter_small_tips.append(p1)
+    for val_ft in range(ft_step // 2, ft_max + 1, ft_step):
+        meters = val_ft * 0.3048
+        dist = meters * factor
+        p0 = base_left.project(dist, angle)
+        p1 = p0.project(small_tick_len, angle - 90)
+        add_line([p0, p1], "ft_tick_small")
+        feet_small_tips.append(p1)
+
+    # Main rails per side
     if meter_ticks:
-        add_line(meter_ticks, "scale_line")
+        add_line(meter_ticks, "scale_line_right")
     if feet_ticks:
         add_line(feet_ticks, "scale_line_left")
-    # Optional middle connector for left scale bottom to base (visual anchor)
-    if feet_ticks:
-        add_line([feet_ticks[0], basepoint], "scale_line_left_bottom")
 
-    # Top connector between sides
+    # Secondary rail for meters (right)
+    start_tip_m = base_right.project(sec_offset, angle + 90)
+    end_tip_m = base_right.project(m_max * factor, angle).project(sec_offset, angle + 90)
+    add_line([start_tip_m, end_tip_m], "scale_line_right_secondary")
+
+    # Secondary rail for feet (left)
+    start_tip_f = base_left.project(sec_offset, angle - 90)
+    end_tip_f = base_left.project(ft_max * 0.3048 * factor, angle).project(sec_offset, angle - 90)
+    add_line([start_tip_f, end_tip_f], "scale_line_left_secondary")
+
+    # Connect rails at base (bottom) only; no top connector
     if meter_ticks and feet_ticks:
-        add_line([meter_ticks[-1], feet_ticks[-1]], "top_connect")
+        add_line([feet_ticks[0], meter_ticks[0]], "bottom_connect")
 
     # Add static labels: numeric max on last tick; units on extra tick beyond
     try:

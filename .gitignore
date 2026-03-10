@@ -4,3 +4,9 @@
 
 # Ignore entire docs directory (all files, all types) per new policy
 /docs/
+
+#skill agents
+.agents/
+.agent/
+.claude/
+skills-lock.json

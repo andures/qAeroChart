@@ -1,5 +1,12 @@
 '''
 Vertical Scale
+
+NOTE: This standalone script has been integrated into the plugin as of Issue #57.
+The canonical implementation lives in:
+  - qAeroChart/core/vertical_scale.py   (pure-Python geometry arithmetic)
+  - qAeroChart/core/layer_manager.py    (populate_vertical_scale_layer)
+  - qAeroChart/core/profile_controller.py (generate_vertical_scale)
+This file is kept for historical reference only.
 '''
 myglobals = set(globals().keys())
 

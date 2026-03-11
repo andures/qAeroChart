@@ -23,13 +23,14 @@
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMenu
+import os.path
 
 # Initialize Qt resources from file resources.py
 # from .resources import *
 
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
-import os.path
+from .utils.logger import log
 
 
 class QAeroChart:
@@ -75,9 +76,13 @@ class QAeroChart:
         
         # Map tool manager (will be initialized in initGui)
         self.tool_manager = None
-        
+
         # Layer manager (will be initialized in initGui)
         self.layer_manager = None
+
+        # Profile controller (will be initialized in initGui)
+        self._profile_manager = None
+        self._controller = None
 
         # Dedicated toolbar for qAeroChart tools
         self.tools_toolbar = None
@@ -225,27 +230,29 @@ class QAeroChart:
                 # Fallback: append at end
                 menu_bar.addMenu(self.top_menu)
         except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: Could not create top-level menu: {e}")
-        
+            log(f"Could not create top-level menu: {e}", "WARNING")
+
         # Initialize map tool manager
         from .tools import ProfilePointToolManager
         self.tool_manager = ProfilePointToolManager(
             self.iface.mapCanvas(),
             self.iface
         )
-        print("PLUGIN qAeroChart: Tool manager initialized")
-        
-        # Initialize layer manager
-        from .core import LayerManager
+        log("Tool manager initialized")
+
+        # Initialize layer manager and profile controller
+        from .core import LayerManager, ProfileManager, ProfileController
         self.layer_manager = LayerManager(self.iface)
-        print("PLUGIN qAeroChart: Layer manager initialized")
+        self._profile_manager = ProfileManager()
+        self._controller = ProfileController(self._profile_manager, self.layer_manager)
+        log("Layer manager and profile controller initialized")
 
     # --------------------------------------------------------------------------
 
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
 
-        print("PLUGIN qAeroChart: Cleaning up...")
+        log("Cleaning up...")
 
         # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
@@ -261,7 +268,7 @@ class QAeroChart:
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
-        print("PLUGIN qAeroChart: Unloading...")
+        log("Unloading...")
 
         for action in self.actions:
             self.iface.removePluginVectorMenu(
@@ -295,6 +302,10 @@ class QAeroChart:
             self.tool_manager.cleanup()
             self.tool_manager = None
         
+        # Clean up controller and managers
+        self._controller = None
+        self._profile_manager = None
+
         # Clean up layer manager (optional - layers remain in project)
         if self.layer_manager:
             # Uncomment to remove layers on plugin unload:
@@ -309,18 +320,19 @@ class QAeroChart:
         if not self.pluginIsActive:
             self.pluginIsActive = True
 
-            print("PLUGIN qAeroChart: Starting...")
+            log("Starting...")
 
             # dockwidget may not exist if:
             #    first run of plugin
             #    removed on close (see self.onClosePlugin method)
             if self.dockwidget is None:
                 # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = QAeroChartDockWidget()
+                self.dockwidget = QAeroChartDockWidget(
+                    iface=self.iface, controller=self._controller
+                )
 
-            # Pass managers to dockwidget
+            # Pass tool manager (draw tool lives outside the controller)
             self.dockwidget.tool_manager = self.tool_manager
-            self.dockwidget.layer_manager = self.layer_manager
 
             # connect to provide cleanup on closing of dockwidget
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)

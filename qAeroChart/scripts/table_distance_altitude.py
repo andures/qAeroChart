@@ -13,6 +13,13 @@ from qgis.core import (
     QgsPrintLayout
 )
 
+# NOTE: This standalone script has been integrated into the plugin as of Issue #58.
+# The canonical implementation lives in:
+#   - qAeroChart/core/distance_altitude_table.py   (pure-Python helpers)
+#   - qAeroChart/core/layout_manager.py            (populate_distance_altitude_table)
+#   - qAeroChart/core/profile_controller.py        (generate_distance_altitude_table)
+# This file is kept for historical reference only.
+
 # ---------------------------
 # Ask user to select JSON file
 # ---------------------------

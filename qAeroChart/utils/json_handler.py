@@ -10,6 +10,8 @@ import json
 import os
 from datetime import datetime
 
+from .logger import log
+
 
 class JSONHandler:
     """
@@ -102,11 +104,11 @@ class JSONHandler:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(full_config, f, indent=2, ensure_ascii=False)
             
-            print(f"PLUGIN qAeroChart: Configuration saved to {filepath}")
+            log(f"Configuration saved to {filepath}")
             return True
             
-        except Exception as e:
-            print(f"PLUGIN qAeroChart ERROR: Failed to save config: {str(e)}")
+        except (OSError, TypeError, ValueError) as e:
+            log(f"Failed to save config: {e}", "ERROR")
             raise
     
     @staticmethod
@@ -140,14 +142,17 @@ class JSONHandler:
             # Check version compatibility
             config_version = config.get("metadata", {}).get("version", "unknown")
             if config_version != JSONHandler.CONFIG_VERSION:
-                print(f"PLUGIN qAeroChart WARNING: Config version mismatch "
-                      f"(file: {config_version}, expected: {JSONHandler.CONFIG_VERSION})")
+                log(
+                    f"Config version mismatch (file: {config_version}, "
+                    f"expected: {JSONHandler.CONFIG_VERSION})",
+                    "WARNING",
+                )
             
-            print(f"PLUGIN qAeroChart: Configuration loaded from {filepath}")
+            log(f"Configuration loaded from {filepath}")
             return config
             
-        except Exception as e:
-            print(f"PLUGIN qAeroChart ERROR: Failed to load config: {str(e)}")
+        except (OSError, json.JSONDecodeError, ValueError) as e:
+            log(f"Failed to load config: {e}", "ERROR")
             raise
     
     @staticmethod
@@ -163,25 +168,25 @@ class JSONHandler:
         """
         # Check required keys (accept origin_point or reference_point)
         if "runway" not in config or "profile_points" not in config:
-            print("PLUGIN qAeroChart ERROR: Missing runway or profile_points in configuration")
+            log("Missing runway or profile_points in configuration", "ERROR")
             return False
         
         ref_point = config.get("origin_point") or config.get("reference_point")
         if not isinstance(ref_point, dict) or 'x' not in ref_point or 'y' not in ref_point:
-            print("PLUGIN qAeroChart ERROR: Invalid origin/reference point structure")
+            log("Invalid origin/reference point structure", "ERROR")
             return False
         
         # Validate runway
         runway = config.get("runway", {})
         runway_keys = ["direction", "length", "thr_elevation", "tch_rdh"]
         if not all(key in runway for key in runway_keys):
-            print("PLUGIN qAeroChart ERROR: Missing runway parameters")
+            log("Missing runway parameters", "ERROR")
             return False
         
         # Validate profile_points
         profile_points = config.get("profile_points", [])
         if not isinstance(profile_points, list):
-            print("PLUGIN qAeroChart ERROR: profile_points must be a list")
+            log("profile_points must be a list", "ERROR")
             return False
         
         return True
@@ -199,14 +204,14 @@ class JSONHandler:
         """
         # Check metadata
         if "metadata" not in config:
-            print("PLUGIN qAeroChart WARNING: Config missing metadata")
+            log("Config missing metadata", "WARNING")
         
         # Check required sections (accept origin_point or reference_point)
         if "runway" not in config or "profile_points" not in config:
-            print("PLUGIN qAeroChart ERROR: Config missing required sections")
+            log("Config missing required sections", "ERROR")
             return False
         if ("origin_point" not in config) and ("reference_point" not in config):
-            print("PLUGIN qAeroChart ERROR: Config missing origin/reference point")
+            log("Config missing origin/reference point", "ERROR")
             return False
         
         return True

@@ -10,7 +10,8 @@ class TestTickOffsetStructure:
     def test_returns_expected_keys(self):
         result = vertical_scale_tick_offsets()
         assert set(result.keys()) == {
-            "metre_bases", "metre_tips", "feet_bases", "feet_tips", "connector"
+            "metre_bases", "metre_tips", "feet_bases", "feet_tips", "connector",
+            "metre_small_ticks", "feet_small_ticks", "half_spacing", "sec_offset",
         }
 
     def test_metre_count_default(self):
@@ -77,6 +78,73 @@ class TestFeetTickPositions:
         result = vertical_scale_tick_offsets()
         for _, perp in result["feet_bases"]:
             assert perp == pytest.approx(0.0)
+
+
+class TestDualRailExtensions:
+    """Tests for dual-rail, mid-step ticks, and scale_denominator (Task 2b-2)."""
+
+    def test_half_spacing_in_result(self):
+        r = vertical_scale_tick_offsets()
+        assert "half_spacing" in r
+        assert r["half_spacing"] == pytest.approx(15.0 * 0.5)
+
+    def test_sec_offset_in_result(self):
+        r = vertical_scale_tick_offsets()
+        assert "sec_offset" in r
+        assert r["sec_offset"] == pytest.approx(15.0 * 0.8)
+
+    def test_metre_small_ticks_key_exists(self):
+        r = vertical_scale_tick_offsets()
+        assert "metre_small_ticks" in r
+
+    def test_feet_small_ticks_key_exists(self):
+        r = vertical_scale_tick_offsets()
+        assert "feet_small_ticks" in r
+
+    def test_metre_small_tick_count_default(self):
+        # range(25//2, 100, 25) = range(12, 100, 25) = [12, 37, 62, 87] → 4
+        r = vertical_scale_tick_offsets(metre_max=100, metre_step=25)
+        assert len(r["metre_small_ticks"]) == 4
+
+    def test_feet_small_tick_count_default(self):
+        # range(50//2, 300, 50) = range(25, 300, 50) = [25, 75, ..., 275] → 6
+        r = vertical_scale_tick_offsets(feet_max=300, feet_step=50)
+        assert len(r["feet_small_ticks"]) == 6
+
+    def test_metre_small_tick_first_along(self):
+        # first mid-step = (metre_step // 2) * VE
+        r = vertical_scale_tick_offsets(metre_step=25, vertical_exaggeration=10.0)
+        along, _ = r["metre_small_ticks"][0]
+        assert along == pytest.approx((25 // 2) * 10.0)
+
+    def test_feet_small_tick_first_along(self):
+        # first mid-step = (feet_step // 2) * FT_TO_M * VE
+        r = vertical_scale_tick_offsets(feet_step=50, vertical_exaggeration=10.0)
+        along, _ = r["feet_small_ticks"][0]
+        assert along == pytest.approx((50 // 2) * FT_TO_M * 10.0)
+
+    def test_small_tick_perps_are_zero(self):
+        r = vertical_scale_tick_offsets()
+        for _, perp in r["metre_small_ticks"]:
+            assert perp == pytest.approx(0.0)
+        for _, perp in r["feet_small_ticks"]:
+            assert perp == pytest.approx(0.0)
+
+    def test_scale_denominator_affects_metre_along(self):
+        r1 = vertical_scale_tick_offsets(scale_denominator=10000)
+        r2 = vertical_scale_tick_offsets(scale_denominator=5000)
+        # VE=10 vs VE=5 → alongs are twice as large with 10000
+        assert r1["metre_bases"][1][0] == pytest.approx(r2["metre_bases"][1][0] * 2)
+
+    def test_scale_denominator_10000_equals_ve_10(self):
+        r1 = vertical_scale_tick_offsets(vertical_exaggeration=10.0)
+        r2 = vertical_scale_tick_offsets(scale_denominator=10000)
+        assert r1["metre_bases"][1][0] == pytest.approx(r2["metre_bases"][1][0])
+
+    def test_half_spacing_custom_tick_length(self):
+        r = vertical_scale_tick_offsets(tick_length_m=20.0)
+        assert r["half_spacing"] == pytest.approx(20.0 * 0.5)
+        assert r["sec_offset"] == pytest.approx(20.0 * 0.8)
 
     def test_second_feet_base_along(self):
         # i=50 ft → 50 * 0.3048 * 10 = 152.4m

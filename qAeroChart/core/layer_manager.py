@@ -912,8 +912,285 @@ class LayerManager:
             bool: True if layer exists
         """
         return layer_name in self.layers and self.layers[layer_name] is not None
+
+    # ------------------------------------------------------------------
+    # Standalone vertical scale (Issue #57 full implementation)
+    # ------------------------------------------------------------------
+
+    def create_vertical_scale_run(
+        self,
+        name: str,
+        basepoint_x: float,
+        basepoint_y: float,
+        angle: float,
+        scale_denominator: float = 10000.0,
+        offset: float = -50.0,
+        tick_len: float = 15.0,
+        m_max: int = 100,
+        m_step: int = 25,
+        ft_max: int = 300,
+        ft_step: int = 50,
+    ) -> tuple[object, object] | None:
+        """Create a self-contained vertical scale on the map (branch-style).
+
+        Each call creates a new layer group ``{name}`` containing:
+        - ``{name} - Lines`` : LineString layer with all tick/rail geometry
+        - ``{name} - Labels``: Point layer with QGIS text labels
+
+        Returns ``(lines_layer, labels_layer)`` on success, or ``None`` on
+        failure (missing QGIS environment).
+
+        Parameters
+        ----------
+        name:            Display name for the scale and its layer group.
+        basepoint_x/y:   Map-CRS coordinates of the scale origin.
+        angle:           Azimuth (degrees) along which the scale axis runs.
+        scale_denominator:
+            1:n denominator.  VE = denominator / 1000 (10 000 → VE 10).
+        offset:          Perpendicular offset from basepoint to rails (map m).
+        tick_len:        Full tick length in map metres.
+        m_max, m_step:   Metre range and step.
+        ft_max, ft_step: Feet range and step.
+        """
+        try:
+            from qgis.core import (
+                QgsPoint,
+                QgsPointXY,
+                QgsGeometry,
+                QgsFeature,
+                QgsVectorLayer,
+                QgsField,
+                QgsLayerTree,
+                QgsProject as _QgsProject,
+                QgsPalLayerSettings,
+                QgsTextFormat,
+                QgsTextBufferSettings,
+                QgsVectorLayerSimpleLabeling,
+                QgsNullSymbolRenderer,
+                Qgis,
+            )
+        except ImportError:
+            log("create_vertical_scale_run: QGIS not available", "ERROR")
+            return None
+
+        from .vertical_scale import vertical_scale_tick_offsets
+        from ..utils.qt_compat import QFont, QColor, QVariant
+
+        offsets = vertical_scale_tick_offsets(
+            tick_length_m=tick_len,
+            scale_denominator=scale_denominator,
+            metre_max=m_max,
+            metre_step=m_step,
+            feet_max=ft_max,
+            feet_step=ft_step,
+        )
+
+        half_sp = offsets["half_spacing"]
+        sec_off = offsets["sec_offset"]
+        small_len = tick_len * 0.45
+        srid = self._get_srid()
+
+        # ---- helper: resolve QgsPoint in map space ----
+        origin = QgsPoint(basepoint_x, basepoint_y)
+        # perpendicular offset → baseline
+        base_centre = origin.project(abs(offset), angle + (90.0 if offset >= 0 else -90.0))
+        base_right = base_centre.project(half_sp, angle + 90.0)   # metres side
+        base_left  = base_centre.project(half_sp, angle - 90.0)   # feet side
+
+        # ---- create Lines layer ----
+        lines_layer = QgsVectorLayer(
+            f"LineString?crs={srid}", f"{name} - Lines", "memory"
+        )
+        lines_prov = lines_layer.dataProvider()
+        lines_prov.addAttributes([QgsField("symbol", QVariant.String, len=30)])
+        lines_layer.updateFields()
+
+        feats: list[QgsFeature] = []
+        _fid = [1]
+
+        def add_line(pts: list, sym: str) -> None:
+            f = QgsFeature()
+            f.setGeometry(QgsGeometry.fromPolyline(pts))
+            f.setAttributes([_fid[0], sym])
+            _fid[0] += 1
+            feats.append(f)
+
+        # Main metre ticks (right rail)
+        for along, _ in offsets["metre_bases"]:
+            base_pt = base_right.project(along, angle)
+            tip_pt = base_pt.project(tick_len, angle + 90.0)
+            add_line([base_pt, tip_pt], "metre_tick")
+
+        # Main feet ticks (left rail)
+        for along, _ in offsets["feet_bases"]:
+            base_pt = base_left.project(along, angle)
+            tip_pt = base_pt.project(tick_len, angle - 90.0)
+            add_line([base_pt, tip_pt], "feet_tick")
+
+        # Mid-step metre ticks
+        for along, _ in offsets["metre_small_ticks"]:
+            base_pt = base_right.project(along, angle)
+            tip_pt = base_pt.project(small_len, angle + 90.0)
+            add_line([base_pt, tip_pt], "m_tick_small")
+
+        # Mid-step feet ticks
+        for along, _ in offsets["feet_small_ticks"]:
+            base_pt = base_left.project(along, angle)
+            tip_pt = base_pt.project(small_len, angle - 90.0)
+            add_line([base_pt, tip_pt], "ft_tick_small")
+
+        # Metre spine (right rail)
+        m_pts = [base_right.project(a, angle) for a, _ in offsets["metre_bases"]]
+        for i in range(len(m_pts) - 1):
+            add_line([m_pts[i], m_pts[i + 1]], "scale_line_right")
+
+        # Feet spine (left rail)
+        f_pts = [base_left.project(a, angle) for a, _ in offsets["feet_bases"]]
+        for i in range(len(f_pts) - 1):
+            add_line([f_pts[i], f_pts[i + 1]], "scale_line_left")
+
+        # Secondary rails
+        if offsets["metre_small_ticks"]:
+            sm_pts = [base_right.project(a, angle) for a, _ in offsets["metre_small_ticks"]]
+            sm_tips = [p.project(small_len, angle + 90.0) for p in sm_pts]
+            for i in range(len(sm_tips) - 1):
+                add_line([sm_tips[i], sm_tips[i + 1]], "scale_line_right_secondary")
+            sf_pts = [base_left.project(a, angle) for a, _ in offsets["feet_small_ticks"]]
+            sf_tips = [p.project(small_len, angle - 90.0) for p in sf_pts]
+            for i in range(len(sf_tips) - 1):
+                add_line([sf_tips[i], sf_tips[i + 1]], "scale_line_left_secondary")
+
+        # Bottom connector (feet base → metre base)
+        add_line([base_left.project(0.0, angle), base_right.project(0.0, angle)], "bottom_connect")
+
+        lines_prov.addFeatures(feats)
+        lines_layer.updateExtents()
+
+        # ---- force black symbology on lines layer (prevent random QGIS colour) ----
+        try:
+            from qgis.core import (
+                QgsSimpleLineSymbolLayer as _SLL,
+                QgsLineSymbol as _LS,
+                QgsSingleSymbolRenderer as _SSR,
+                QgsUnitTypes as _QUT,
+            )
+            _sl = _SLL()
+            _sl.setColor(QColor("black"))
+            _sl.setWidth(0.25)
+            _sl.setWidthUnit(_QUT.RenderMillimeters)
+            _sym = _LS()
+            _sym.changeSymbolLayer(0, _sl)
+            lines_layer.setRenderer(_SSR(_sym))
+        except Exception as _e:
+            log(f"Could not set lines_layer symbology: {_e}", "WARNING")
+
+        # ---- create Labels layer ----
+        labels_layer = QgsVectorLayer(
+            f"Point?crs={srid}", f"{name} - Labels", "memory"
+        )
+        lbl_prov = labels_layer.dataProvider()
+        lbl_prov.addAttributes([
+            QgsField("id", QVariant.Int),
+            QgsField("txt_label", QVariant.String, len=50),
+        ])
+        labels_layer.updateFields()
+
+        lbl_feats: list[QgsFeature] = []
+        _lid = [1]
+
+        def add_label(pt: QgsPoint, text: str) -> None:
+            f = QgsFeature()
+            f.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(pt.x(), pt.y())))
+            f.setAttributes([_lid[0], text])
+            _lid[0] += 1
+            lbl_feats.append(f)
+
+        _FT_TO_M = 0.3048
+        _ve = scale_denominator / 1000.0
+
+        # Metre value labels
+        for v in range(0, m_max + 1, m_step):
+            along = v * _ve
+            base_pt = base_right.project(along, angle)
+            tip_pt = base_pt.project(tick_len * 1.15, angle + 90.0)
+            add_label(tip_pt, str(v))
+        # "METERS" unit label
+        last_m = base_right.project(m_max * _ve, angle)
+        add_label(last_m.project(tick_len * 1.5, angle + 90.0), "METERS")
+
+        # Feet value labels
+        for v in range(0, ft_max + 1, ft_step):
+            along = v * _FT_TO_M * _ve
+            base_pt = base_left.project(along, angle)
+            tip_pt = base_pt.project(tick_len * 1.15, angle - 90.0)
+            add_label(tip_pt, str(v))
+        # "FEET" unit label
+        last_f = base_left.project(ft_max * _FT_TO_M * _ve, angle)
+        add_label(last_f.project(tick_len * 1.5, angle - 90.0), "FEET")
+
+        # Title labels (at bottom of scale)
+        denom_str = f"1:{int(scale_denominator):,}".replace(",", " ")
+        for i, txt in enumerate(["VERTICAL", "SCALE", denom_str]):
+            pt = origin.project(i * tick_len * 0.6, angle - 90.0)
+            add_label(pt, txt)
+
+        lbl_prov.addFeatures(lbl_feats)
+        labels_layer.updateExtents()
+
+        # ---- configure labeling on labels_layer ----
+        try:
+            pal = QgsPalLayerSettings()
+            pal.fieldName = "txt_label"
+            try:
+                pal.placement = Qgis.LabelPlacement.OverPoint
+            except AttributeError:
+                pal.placement = QgsPalLayerSettings.OverPoint
+            fmt = QgsTextFormat()
+            fmt.setFont(QFont("Segoe UI", 8))
+            fmt.setSize(8.0)
+            fmt.setColor(QColor("black"))
+            buf = QgsTextBufferSettings()
+            buf.setEnabled(True)
+            buf.setSize(0.6)
+            buf.setColor(QColor("white"))
+            fmt.setBuffer(buf)
+            pal.setFormat(fmt)
+            labels_layer.setLabelsEnabled(True)
+            labels_layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
+            labels_layer.setRenderer(QgsNullSymbolRenderer())
+        except Exception as e:
+            log(f"Could not configure labeling for vertical scale: {e}", "WARNING")
+
+        # ---- add both layers to a named group ----
+        try:
+            project = _QgsProject.instance()
+            root = project.layerTreeRoot()
+            group = root.findGroup(name)
+            if group is None:
+                group = root.addGroup(name)
+            project.addMapLayer(lines_layer, False)
+            project.addMapLayer(labels_layer, False)
+            group.addLayer(lines_layer)
+            group.addLayer(labels_layer)
+            log(f"Vertical scale '{name}' created: "
+                f"{len(feats)} line features, {len(lbl_feats)} labels")
+        except Exception as e:
+            log(f"Could not add vertical scale layers to project: {e}", "ERROR")
+            return None
+
+        return lines_layer, labels_layer
+
+    def _get_srid(self) -> str:
+        """Return the project CRS auth-id or a safe fallback."""
+        try:
+            crs = self.project.crs() if self.project else None
+            if crs and crs.isValid():
+                return crs.authid()
+        except Exception:
+            pass
+        return "EPSG:4326"
+
     
-    def populate_vertical_scale_layer(self, config: dict) -> None:
         """Draw the double-sided altitude scale bar for the profile (Issue #57).
 
         Faithfully ports scripts/Vertical_Scale.py: places a scale bar at the

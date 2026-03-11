@@ -30,6 +30,7 @@ import os.path
 
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
+from .vertical_scale_dialog import VerticalScaleDockWidget
 from .utils.logger import log
 
 
@@ -89,6 +90,9 @@ class QAeroChart:
         self.generate_profile_action = None
         # Top-level menu
         self.top_menu = None
+        # Vertical scale dock (Issue #57 standalone)
+        self.vertical_scale_dock = None
+        self.vertical_scale_action = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -247,6 +251,22 @@ class QAeroChart:
         self._controller = ProfileController(self._profile_manager, self.layer_manager)
         log("Layer manager and profile controller initialized")
 
+        # Vertical scale toolbar action (Issue #57)
+        vs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_vertical_scale.svg')
+        self.vertical_scale_action = QAction(
+            QIcon(vs_icon_path),
+            self.tr('Vertical Scale'),
+            self.iface.mainWindow(),
+        )
+        self.vertical_scale_action.setObjectName('qAeroChartVerticalScaleAction')
+        self.vertical_scale_action.setStatusTip(
+            self.tr('Create a vertical scale bar (metres / feet)')
+        )
+        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
+        self.tools_toolbar.addAction(self.vertical_scale_action)
+        if self.top_menu:
+            self.top_menu.addAction(self.vertical_scale_action)
+
     # --------------------------------------------------------------------------
 
     def onClosePlugin(self):
@@ -296,7 +316,17 @@ class QAeroChart:
             except Exception:
                 pass
             self.top_menu = None
-        
+
+        # Close vertical scale dock
+        if self.vertical_scale_dock:
+            try:
+                self.iface.removeDockWidget(self.vertical_scale_dock)
+                self.vertical_scale_dock.deleteLater()
+            except Exception:
+                pass
+            self.vertical_scale_dock = None
+            self.vertical_scale_action = None
+
         # Clean up tool manager
         if self.tool_manager:
             self.tool_manager.cleanup()
@@ -341,3 +371,24 @@ class QAeroChart:
             # TODO: fix to allow choice of dock location
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+
+    def open_vertical_scale_dock(self) -> None:
+        """Open (or raise) the standalone Vertical Scale dock widget."""
+        try:
+            from .core.vertical_scale_manager import VerticalScaleManager
+            from .core.vertical_scale_controller import VerticalScaleController
+            if self.vertical_scale_dock is None:
+                vs_manager = VerticalScaleManager()
+                vs_controller = VerticalScaleController(vs_manager, self.layer_manager)
+                self.vertical_scale_dock = VerticalScaleDockWidget(
+                    controller=vs_controller,
+                    iface=self.iface,
+                    parent=self.iface.mainWindow(),
+                )
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            else:
+                self.vertical_scale_dock.show_menu()
+            self.vertical_scale_dock.show()
+            self.vertical_scale_dock.raise_()
+        except Exception as e:
+            log(f"Could not open Vertical Scale dock: {e}", "ERROR")

@@ -6,6 +6,8 @@ This module provides validation functions for user input, ensuring data
 complies with ICAO standards and format requirements.
 """
 
+from __future__ import annotations
+
 import re
 
 
@@ -15,35 +17,29 @@ class Validators:
     """
     
     @staticmethod
-    def validate_coordinate(value, coord_type="x"):
+    def validate_coordinate(value: str | float, coord_type: str = "x") -> tuple[bool, str, float | None]:
         """
-        Validate coordinate value.
-        
+        Validate that a coordinate value is a valid number.
+
+        The plugin operates on projected CRS (meters), so no geographic
+        range check is applied here. Callers dealing with WGS-84 inputs
+        must add their own range validation.
+
         Args:
             value (str or float): Coordinate value
-            coord_type (str): Type of coordinate ('x' or 'y')
-        
+            coord_type (str): Type of coordinate ('x' or 'y'), used in error message only
+
         Returns:
             tuple: (is_valid, error_message, parsed_value)
         """
         try:
             parsed = float(value)
-            
-            # Basic range check (assuming geographic coordinates)
-            if coord_type.lower() == 'x':
-                if parsed < -180 or parsed > 180:
-                    return (False, "Longitude must be between -180 and 180", None)
-            elif coord_type.lower() == 'y':
-                if parsed < -90 or parsed > 90:
-                    return (False, "Latitude must be between -90 and 90", None)
-            
             return (True, "", parsed)
-            
         except (ValueError, TypeError):
             return (False, f"Invalid {coord_type} coordinate format", None)
     
     @staticmethod
-    def validate_distance(value):
+    def validate_distance(value: str | float) -> tuple[bool, str, float | None]:
         """
         Validate distance value (Nautical Miles).
         
@@ -69,7 +65,7 @@ class Validators:
             return (False, "Invalid distance format", None)
     
     @staticmethod
-    def validate_elevation(value):
+    def validate_elevation(value: str | float) -> tuple[bool, str, float | None]:
         """
         Validate elevation value (feet).
         
@@ -93,7 +89,7 @@ class Validators:
             return (False, "Invalid elevation format", None)
     
     @staticmethod
-    def validate_runway_direction(value):
+    def validate_runway_direction(value: str) -> tuple[bool, str]:
         """
         Validate runway direction format (e.g., "09/27", "18/36").
         
@@ -127,7 +123,7 @@ class Validators:
         return (True, "")
     
     @staticmethod
-    def validate_runway_length(value):
+    def validate_runway_length(value: str | float) -> tuple[bool, str, float | None]:
         """
         Validate runway length (meters).
         
@@ -150,7 +146,7 @@ class Validators:
             return (False, "Invalid runway length format", None)
     
     @staticmethod
-    def validate_point_name(value):
+    def validate_point_name(value: str) -> tuple[bool, str]:
         """
         Validate point name (alphanumeric, max 50 chars).
         

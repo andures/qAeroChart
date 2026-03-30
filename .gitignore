@@ -2,5 +2,15 @@
 *.[Zz][Ii][Pp]
 *.[Rr][Aa][Rr]
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Ignore entire docs directory (all files, all types) per new policy
 /docs/
+
+#skill agents
+.agents/
+.agent/
+.claude/
+skills-lock.json

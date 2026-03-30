@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 /***************************************************************************
  QAeroChartDockWidget
@@ -21,14 +21,19 @@
  ***************************************************************************/
 """
 
+from __future__ import annotations
+
 import os
 
 from qgis.PyQt import QtWidgets, uic
-from qgis.PyQt.QtCore import pyqtSignal, Qt, QItemSelectionModel
-from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QMessageBox, QShortcut, QInputDialog
+from qgis.PyQt.QtCore import pyqtSignal
+from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QShortcut, QInputDialog
 from qgis.PyQt.QtGui import QKeySequence
+from .utils.qt_compat import Qt, QMessageBox, QAbstractItemView
 from qgis.core import Qgis, QgsPointXY
-from qgis.utils import iface
+from .core.profile_chart_geometry import ProfileChartGeometry
+from .utils.json_handler import JSONHandler
+from .utils.logger import log
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'qaerochart_dockwidget_base.ui'))
@@ -39,51 +44,57 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     closingPlugin = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, iface: object | None = None, controller: object | None = None, parent: QtWidgets.QWidget | None = None) -> None:
         """Constructor."""
         super(QAeroChartDockWidget, self).__init__(parent)
-        # Set up the user interface from Designer.
-        # After setupUI you can access any designer object by doing
-        # self.<objectname>, and you can use autoconnect slots - see
-        # http://doc.qt.io/qt-5/designer-using-a-ui-file.html
-        # #widgets-and-dialogs-with-auto-connect
+        self._iface = iface
+        self._controller = controller
         self.setupUi(self)
-        
-        # Initialize profile manager
-        from .core import ProfileManager
-        self.profile_manager = ProfileManager()
-        
+
         # Track current profile being edited (None for new profiles)
         self.current_profile_id = None
-        
+
         # Initialize profile form components
         self._init_profile_form()
-        
+
         # Initialize profile list
         self._init_profile_list()
-        
+
         # Connect menu signals
         self.btnNewProfile.clicked.connect(self.new_profile)
         self.btnEditProfile.clicked.connect(self.edit_profile)
         self.btnDrawProfile.clicked.connect(self.draw_profile)
         self.btnDeleteProfile.clicked.connect(self.delete_profile)
         self.btnBackToMenu.clicked.connect(self.show_menu)
-        
+
+        # Issue #57: vertical scale bar button (optional — only if present in UI)
+        if hasattr(self, "btnVerticalScale"):
+            self.btnVerticalScale.clicked.connect(self._on_vertical_scale_clicked)
+
+        # Issue #58: distance/altitude table button (optional — only if present in UI)
+        if hasattr(self, "btnDistanceAltitudeTable"):
+            self.btnDistanceAltitudeTable.clicked.connect(self._on_distance_altitude_table_clicked)
+
         # Connect list selection
         self.listWidgetProfiles.itemSelectionChanged.connect(self._on_profile_selection_changed)
         # Enable context menu to rename without recreating
         try:
             self.listWidgetProfiles.setContextMenuPolicy(Qt.CustomContextMenu)
             self.listWidgetProfiles.customContextMenuRequested.connect(self._on_profiles_context_menu)
-        except Exception:
+        except AttributeError:
             pass
         # F2 to rename selected profile
         try:
             self._rename_shortcut = QShortcut(QKeySequence(Qt.Key_F2), self.listWidgetProfiles)
             self._rename_shortcut.activated.connect(self.rename_selected_profile)
-        except Exception:
+        except AttributeError:
             pass
-        
+
+        # Wire controller signals
+        if self._controller is not None:
+            self._controller.message.connect(self._show_message)
+            self._controller.profiles_changed.connect(self._refresh_profile_list)
+
         # Start on menu page
         self.stackedWidget.setCurrentIndex(0)
 
@@ -91,12 +102,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         """Handle close event."""
         self.closingPlugin.emit()
         event.accept()
+
+    def _show_message(self, title: str, text: str, level: int) -> None:
+        """Slot for ProfileController.message signal — pushes to QGIS message bar."""
+        if self._iface is not None:
+            self._iface.messageBar().pushMessage(title, text, level=level, duration=5)
     
     def _init_profile_form(self):
         """Initialize the profile creation form embedded in the dockwidget."""
-        from .ui.profile_creation_dialog import ProfileCreationDialog
-        
-        # Load the dialog form as a widget (not as a dialog)
+        # Load the form widget (QWidget root since B19 fix)
         form_ui_path = os.path.join(os.path.dirname(__file__), 'ui', 'profile_creation_dialog_base.ui')
         self.profile_form_widget = uic.loadUi(form_ui_path)
         
@@ -109,54 +123,40 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Store reference point
         self.reference_point = None
         
-        # Connect table management buttons
+        # Connect all buttons
         self._connect_form_buttons()
-
-    # Style parameters UI has been simplified; no map-unit toggle wiring needed
         
         # Initialize table with default rows
         self._initialize_profile_table()
         
         # Set default values for runway parameters
         self._set_default_runway_values()
-        
-        print("PLUGIN qAeroChart: Profile form initialized in dockwidget")
-
-    # Removed legacy map-units wiring (Issue #9: Style Parameters cleanup)
     
     def _connect_form_buttons(self):
-        """Connect all buttons in the embedded form."""
-        # Create/Cancel buttons from the embedded form
-        if hasattr(self.profile_form_widget, 'btn_create'):
-            self.profile_form_widget.btn_create.clicked.connect(self.create_profile)
+        """Connect all buttons in the embedded form and the dockwidget button bar."""
+        # Primary action buttons live on the dockwidget (always visible, outside scroll)
+        if hasattr(self, 'btnCreateProfile'):
+            self.btnCreateProfile.clicked.connect(self.create_profile)
+        if hasattr(self, 'btnCancelForm'):
+            self.btnCancelForm.clicked.connect(self.cancel_profile)
+        if hasattr(self, 'btnLoadConfig'):
+            self.btnLoadConfig.clicked.connect(self._on_load_config)
+        if hasattr(self, 'btnSaveConfig'):
+            self.btnSaveConfig.clicked.connect(self._on_save_config)
         
-        if hasattr(self.profile_form_widget, 'btn_cancel'):
-            self.profile_form_widget.btn_cancel.clicked.connect(self.cancel_profile)
-        
-        # Reference point selection
+        # Reference point selection lives in the embedded form
         if hasattr(self.profile_form_widget, 'btn_select_point'):
             self.profile_form_widget.btn_select_point.clicked.connect(self._on_select_point_clicked)
         
-        # Table management
+        # Table management buttons remain in the embedded form
         if hasattr(self.profile_form_widget, 'btn_add_point'):
             self.profile_form_widget.btn_add_point.clicked.connect(self._on_add_row)
-        
         if hasattr(self.profile_form_widget, 'btn_remove_point'):
             self.profile_form_widget.btn_remove_point.clicked.connect(self._on_remove_row)
-        # Row reorder
         if hasattr(self.profile_form_widget, 'btn_move_up'):
             self.profile_form_widget.btn_move_up.clicked.connect(self._on_move_row_up)
         if hasattr(self.profile_form_widget, 'btn_move_down'):
             self.profile_form_widget.btn_move_down.clicked.connect(self._on_move_row_down)
-        
-        # Configuration save/load
-        if hasattr(self.profile_form_widget, 'btn_save_config'):
-            self.profile_form_widget.btn_save_config.clicked.connect(self._on_save_config)
-        
-        if hasattr(self.profile_form_widget, 'btn_load_config'):
-            self.profile_form_widget.btn_load_config.clicked.connect(self._on_load_config)
-        
-        print("PLUGIN qAeroChart: Form buttons connected")
     
     def _initialize_profile_table(self):
         """Initialize the profile points table with default values."""
@@ -179,7 +179,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self._add_table_row("FAF", "6.0", "2000", "2400", "Final Approach Fix")
         self._add_table_row("IF", "7.4", "2000", "2500", "Intermediate Fix")
         
-        print("PLUGIN qAeroChart: Profile table initialized with 7 default points (realistic ICAO profile)")
+        log("Profile table initialized with 7 default points (realistic ICAO profile)")
     
     def _set_default_runway_values(self):
         """Set default values for runway parameters to speed up testing."""
@@ -203,18 +203,18 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self.profile_form_widget.lineEdit_tch_rdh.setText("50")
         
         # Log exactly what we set above so it's clear
-        print("PLUGIN qAeroChart: Default runway values set (DIR 07, 3000 m length, 13 ft THR, 50 ft TCH)")
+        log("Default runway values set (DIR 07, 3000 m length, 13 ft THR, 50 ft TCH)")
     
     def show_menu(self):
         """Show the main menu page."""
         self._refresh_profile_list()
         self.stackedWidget.setCurrentIndex(0)
-        print("PLUGIN qAeroChart: Showing menu page")
+        log("Showing menu page")
     
     def show_profile_form(self):
         """Show the profile creation form page."""
         self.stackedWidget.setCurrentIndex(1)
-        print("PLUGIN qAeroChart: Showing profile form page")
+        log("Showing profile form page")
     
     # ========== Profile List Management ==========
     
@@ -222,19 +222,19 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         """Initialize the profile list widget."""
         # Allow selecting multiple profiles at once
         try:
-            self.listWidgetProfiles.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        except Exception:
+            self.listWidgetProfiles.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        except AttributeError:
             pass
 
         # Bind Delete key to bulk delete when list has focus
         try:
             self._delete_shortcut = QShortcut(QKeySequence.Delete, self.listWidgetProfiles)
             self._delete_shortcut.activated.connect(self.delete_profile)
-        except Exception:
+        except AttributeError:
             pass
 
         self._refresh_profile_list()
-        print("PLUGIN qAeroChart: Profile list initialized")
+        log("Profile list initialized")
 
     def _on_profiles_context_menu(self, pos):
         """Show context menu for profiles list with Rename action."""
@@ -251,27 +251,26 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             elif action == act_draw:
                 self.draw_profile()
         except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: Context menu failed: {e}")
+            log(f"Context menu failed: {e}", "WARNING")
     
-    def _refresh_profile_list(self):
+    def _refresh_profile_list(self) -> None:
         """Refresh the profile list from saved profiles."""
         self.listWidgetProfiles.clear()
-        
-        profiles = self.profile_manager.get_all_profiles()
-        
+
+        profiles = self._controller.get_all_profiles() if self._controller else []
+
         if not profiles:
-            # Show empty state
             item = QtWidgets.QListWidgetItem("No profiles created yet. Click 'New Profile' to start.")
             item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
             self.listWidgetProfiles.addItem(item)
         else:
             for profile in profiles:
-                display_name = self.profile_manager.get_profile_display_name(profile)
+                display_name = self._controller.get_profile_display_name(profile)
                 item = QtWidgets.QListWidgetItem(display_name)
-                item.setData(Qt.UserRole, profile['id'])  # Store profile ID
+                item.setData(Qt.UserRole, profile['id'])
                 self.listWidgetProfiles.addItem(item)
-        
-        print(f"PLUGIN qAeroChart: Profile list refreshed ({len(profiles)} profiles)")
+
+        log(f"Profile list refreshed ({len(profiles)} profiles)")
     
     def _on_profile_selection_changed(self):
         """Handle profile selection change."""
@@ -310,150 +309,128 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # Store that we're creating a new profile (not editing)
         self.current_profile_id = None
         
+        # Update primary action button label
+        if hasattr(self, 'btnCreateProfile'):
+            self.btnCreateProfile.setText("Create Profile")
+        
         # Show form
         self.show_profile_form()
-        print("PLUGIN qAeroChart: New profile creation started")
     
-    def edit_profile(self):
+    def edit_profile(self) -> None:
         """Edit the selected profile."""
         selected_items = self.listWidgetProfiles.selectedItems()
-        
+
         if not selected_items:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Please select a profile to edit.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Please select a profile to edit.",
+                    level=Qgis.Warning, duration=3
+                )
             return
-        
+
         profile_id = selected_items[0].data(Qt.UserRole)
-        config = self.profile_manager.get_profile(profile_id)
-        
+        config = self._controller.get_profile(profile_id) if self._controller else None
+
         if not config:
-            iface.messageBar().pushMessage(
-                "Error",
-                "Could not load profile configuration.",
-                level=Qgis.Critical,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "Error", "Could not load profile configuration.",
+                    level=Qgis.Critical, duration=3
+                )
             return
-        
-        # Load configuration into form
+
         self._populate_form_from_config(config)
-        # Also load display name into form's name field if present
+        # Load display name into form's name field
         try:
-            profiles = self.profile_manager.get_all_profiles()
+            profiles = self._controller.get_all_profiles()
             for p in profiles:
                 if p.get('id') == profile_id:
                     if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
                         self.profile_form_widget.lineEdit_profile_name.setText(p.get('name', ''))
                     break
-        except Exception:
+        except (AttributeError, KeyError):
             pass
-        
-        # Store profile ID for updating
+
         self.current_profile_id = profile_id
-        
-        # Show form
+
+        if hasattr(self, 'btnCreateProfile'):
+            self.btnCreateProfile.setText("Update Profile")
+
         self.show_profile_form()
-        print(f"PLUGIN qAeroChart: Editing profile {profile_id}")
     
-    def draw_profile(self):
+    def draw_profile(self) -> None:
         """Draw the selected profile on the map."""
         selected_items = self.listWidgetProfiles.selectedItems()
-        
+
         if not selected_items:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Please select a profile to draw.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Please select a profile to draw.",
+                    level=Qgis.Warning, duration=3
+                )
             return
-        
+
         profile_id = selected_items[0].data(Qt.UserRole)
-        config = self.profile_manager.get_profile(profile_id)
-        
-        if not config:
-            iface.messageBar().pushMessage(
-                "Error",
-                "Could not load profile configuration.",
-                level=Qgis.Critical,
-                duration=3
-            )
+        if self._controller:
+            self._controller.draw_profile(profile_id)
+
+    def _on_vertical_scale_clicked(self) -> None:
+        """Draw the vertical scale bar for the selected profile (Issue #57)."""
+        selected_items = self.listWidgetProfiles.selectedItems()
+        if not selected_items:
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Please select a profile first.",
+                    level=Qgis.Warning, duration=3
+                )
             return
-        
-        # Create/update layers
-        if hasattr(self, 'layer_manager') and self.layer_manager:
-            self._create_profile_layers(config)
-            iface.messageBar().pushMessage(
-                "Profile Drawn",
-                "Profile has been drawn on the map.",
-                level=Qgis.Success,
-                duration=3
-            )
-        
-        print(f"PLUGIN qAeroChart: Drew profile {profile_id}")
+        profile_id = selected_items[0].data(Qt.UserRole)
+        if self._controller:
+            self._controller.generate_vertical_scale(profile_id)
+
+    def _on_distance_altitude_table_clicked(self) -> None:
+        """Insert the distance/altitude table for the selected profile (Issue #58)."""
+        selected_items = self.listWidgetProfiles.selectedItems()
+        if not selected_items:
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Please select a profile first.",
+                    level=Qgis.Warning, duration=3
+                )
+            return
+        profile_id = selected_items[0].data(Qt.UserRole)
+        if self._controller:
+            self._controller.generate_distance_altitude_table(profile_id)
     
-    def delete_profile(self):
+    def delete_profile(self) -> None:
         """Delete one or multiple selected profiles."""
         selected_items = [i for i in self.listWidgetProfiles.selectedItems() if i.data(Qt.UserRole)]
 
         if not selected_items:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Please select at least one profile to delete.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Please select at least one profile to delete.",
+                    level=Qgis.Warning, duration=3
+                )
             return
 
         count = len(selected_items)
-        # Build a short preview list (first 5 names)
         names_preview = "\n".join([i.text() for i in selected_items[:5]])
         more = "" if count <= 5 else f"\n…and {count - 5} more"
 
         title = "Delete Profiles" if count > 1 else "Delete Profile"
-        body = (
-            f"Are you sure you want to delete {count} profile(s)?\n\n"
-            f"{names_preview}{more}"
-        )
+        body = f"Are you sure you want to delete {count} profile(s)?\n\n{names_preview}{more}"
 
         reply = QMessageBox.question(
-            self,
-            title,
-            body,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self, title, body, QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
-
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.Yes:  # type: ignore[comparison-overlap]
             return
 
-        # Delete all selected profiles
-        deleted = 0
-        for item in selected_items:
-            pid = item.data(Qt.UserRole)
-            try:
-                self.profile_manager.delete_profile(pid)
-                deleted += 1
-            except Exception as e:
-                print(f"PLUGIN qAeroChart ERROR: Could not delete profile {pid}: {e}")
+        if self._controller:
+            profile_ids = [i.data(Qt.UserRole) for i in selected_items]
+            self._controller.delete_profiles(profile_ids)
 
-        self._refresh_profile_list()
-
-        msg = (
-            f"{deleted} profile(s) removed." if deleted > 1 else "Profile has been removed."
-        )
-        iface.messageBar().pushMessage(
-            "Profile Deleted",
-            msg,
-            level=Qgis.Info,
-            duration=3
-        )
-        print(f"PLUGIN qAeroChart: Deleted {deleted} profile(s)")
-    
     # ========== End Profile List Management ==========
     
     def cancel_profile(self):
@@ -469,7 +446,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Return to menu
         self.show_menu()
-        print("PLUGIN qAeroChart: Profile creation cancelled")
+        log("Profile creation cancelled")
     
     # ========== Table Management Methods ==========
     
@@ -478,7 +455,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table = self.profile_form_widget.tableWidget_points
         row_count = table.rowCount()
         self._add_table_row(f"Point_{row_count + 1}", "", "", "")
-        print(f"PLUGIN qAeroChart: Added row {row_count + 1} to table")
+        log(f"Added row {row_count + 1} to table")
     
     def _on_remove_row(self):
         """Remove the currently selected row from the table."""
@@ -487,14 +464,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         if current_row >= 0:
             table.removeRow(current_row)
-            print(f"PLUGIN qAeroChart: Removed row {current_row} from table")
+            log(f"Removed row {current_row} from table")
         else:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Please select a row to remove.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection",
+                    "Please select a row to remove.",
+                    level=Qgis.Warning,
+                    duration=3
+                )
     
     def _add_table_row(self, point_name="", distance="", elevation="", moca="", notes=""):
         """
@@ -541,12 +519,13 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table = self.profile_form_widget.tableWidget_points
         selected = sorted({idx.row() for idx in table.selectedIndexes()})
         if not selected:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Select one or more rows to move.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection",
+                    "Select one or more rows to move.",
+                    level=Qgis.Warning,
+                    duration=3
+                )
             return
         # Move each selected row up; start from smallest to avoid double-swapping
         for r in selected:
@@ -556,14 +535,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = max(0, r - 1)
-            # Select the entire moved row and keep focus on first column
             try:
                 table.selectRow(new_r)
-            except Exception:
-                # Fallback: select cells if selectRow unavailable
-                for c in range(table.columnCount()):
-                    idx = table.model().index(new_r, c)
-                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            except RuntimeError:
+                pass
             table.setCurrentCell(new_r, 0)
 
     def _on_move_row_down(self):
@@ -572,12 +547,13 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         row_count = table.rowCount()
         selected = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
         if not selected:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Select one or more rows to move.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection",
+                    "Select one or more rows to move.",
+                    level=Qgis.Warning,
+                    duration=3
+                )
             return
         # Move each selected row down; start from largest to avoid double-swapping
         for r in selected:
@@ -587,14 +563,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         table.clearSelection()
         for r in selected:
             new_r = min(row_count - 1, r + 1)
-            # Select the entire moved row and keep focus on first column
             try:
                 table.selectRow(new_r)
-            except Exception:
-                # Fallback: select cells if selectRow unavailable
-                for c in range(table.columnCount()):
-                    idx = table.model().index(new_r, c)
-                    table.selectionModel().select(idx, QItemSelectionModel.Select)
+            except RuntimeError:
+                pass
             table.setCurrentCell(new_r, 0)
     
     # ========== Configuration Save/Load Methods ==========
@@ -606,7 +578,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             config = self._build_config_from_form()
             
             if not config:
-                iface.messageBar().pushMessage(
+                self._iface.messageBar().pushMessage(
                     "Cannot Save",
                     "Please fill in required fields before saving.",
                     level=Qgis.Warning,
@@ -616,7 +588,6 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             
             # Get default filename
             runway_dir = self.profile_form_widget.lineEdit_direction.text().strip() or "profile"
-            from .utils import JSONHandler
             default_filename = JSONHandler.get_default_filename(runway_dir)
             
             # Show file dialog
@@ -628,7 +599,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             )
             
             if not filepath:
-                print("PLUGIN qAeroChart: Save cancelled by user")
+                log("Save cancelled by user")
                 return
             
             # Ensure .json extension
@@ -639,23 +610,23 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             JSONHandler.save_config(config, filepath)
             
             # Show success message
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "Configuration Saved",
                 f"Saved to: {os.path.basename(filepath)}",
                 level=Qgis.Success,
                 duration=5
             )
             
-            print(f"PLUGIN qAeroChart: Configuration saved to {filepath}")
+            log(f"Configuration saved to {filepath}")
             
         except Exception as e:
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "Save Error",
                 f"Failed to save configuration: {str(e)}",
                 level=Qgis.Critical,
                 duration=5
             )
-            print(f"PLUGIN qAeroChart ERROR: Save failed: {str(e)}")
+            log(f"Save failed: {str(e)}", "ERROR")
     
     def _on_load_config(self):
         """Load configuration from JSON file."""
@@ -669,11 +640,10 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             )
             
             if not filepath:
-                print("PLUGIN qAeroChart: Load cancelled by user")
+                log("Load cancelled by user")
                 return
             
             # Load configuration
-            from .utils import JSONHandler
             config = JSONHandler.load_config(filepath)
             
             if config:
@@ -681,41 +651,41 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._populate_form_from_config(config)
                 
                 # Show success message
-                iface.messageBar().pushMessage(
+                self._iface.messageBar().pushMessage(
                     "Configuration Loaded",
                     f"Loaded from: {os.path.basename(filepath)}",
                     level=Qgis.Success,
                     duration=5
                 )
                 
-                print(f"PLUGIN qAeroChart: Configuration loaded from {filepath}")
+                log(f"Configuration loaded from {filepath}")
             
         except FileNotFoundError as e:
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "File Not Found",
                 str(e),
                 level=Qgis.Warning,
                 duration=5
             )
-            print(f"PLUGIN qAeroChart WARNING: {str(e)}")
+            log(f"{str(e)}", "WARNING")
             
         except ValueError as e:
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "Invalid Configuration",
                 str(e),
                 level=Qgis.Warning,
                 duration=5
             )
-            print(f"PLUGIN qAeroChart WARNING: {str(e)}")
+            log(f"{str(e)}", "WARNING")
             
         except Exception as e:
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "Load Error",
                 f"Failed to load configuration: {str(e)}",
                 level=Qgis.Critical,
                 duration=5
             )
-            print(f"PLUGIN qAeroChart ERROR: Load failed: {str(e)}")
+            log(f"Load failed: {str(e)}", "ERROR")
     
     def _populate_form_from_config(self, config):
         """
@@ -762,12 +732,12 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                         form.doubleSpinBox_oca_from_nm.setValue(float(oca.get('from_nm', oca.get('from', 0.0))))
                         form.doubleSpinBox_oca_to_nm.setValue(float(oca.get('to_nm', oca.get('to', 0.0))))
                         form.doubleSpinBox_oca_ft.setValue(float(oca.get('oca_ft', oca.get('height_ft', 0.0))))
-                    except Exception:
+                    except (ValueError, TypeError):
                         pass
                 else:
                     form.checkBox_enable_oca.setChecked(False)
         except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: Could not populate OCA UI: {e}")
+            log(f"Could not populate OCA UI: {e}", "WARNING")
 
         # Load profile points
         profile_points = config.get("profile_points", [])
@@ -781,9 +751,9 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             )
         
         config_version = config.get("version", "1.0")
-        print(f"PLUGIN qAeroChart: Loaded {len(profile_points)} profile points from config v{config_version}")
+        log(f"Loaded {len(profile_points)} profile points from config v{config_version}")
 
-    def rename_selected_profile(self):
+    def rename_selected_profile(self) -> None:
         """Trigger rename for the currently selected profile (F2)."""
         # Defensive import in case plugin loader strips or misses the module import
         try:
@@ -792,28 +762,26 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             _QID = None
         selected_items = self.listWidgetProfiles.selectedItems()
         if not selected_items:
-            iface.messageBar().pushMessage(
-                "No Selection",
-                "Select a single profile to rename.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "No Selection", "Select a single profile to rename.",
+                    level=Qgis.Warning, duration=3
+                )
             return
-        # Only rename the first selected (consistent with typical F2 behavior)
+
         item = selected_items[0]
         profile_id = item.data(Qt.UserRole)
         if not profile_id:
             return
 
-        # Current name
         current_name = None
         try:
-            profiles = self.profile_manager.get_all_profiles()
+            profiles = self._controller.get_all_profiles() if self._controller else []
             for p in profiles:
                 if p.get('id') == profile_id:
                     current_name = p.get('name', '')
                     break
-        except Exception:
+        except (AttributeError, ValueError):
             current_name = item.text()
 
         # Ask user for new name
@@ -832,88 +800,48 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             return
         new_name = new_name.strip()
         if not new_name:
-            iface.messageBar().pushMessage(
-                "Invalid Name",
-                "Profile name cannot be empty.",
-                level=Qgis.Warning,
-                duration=3
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "Invalid Name", "Profile name cannot be empty.",
+                    level=Qgis.Warning, duration=3
+                )
             return
 
-        # Update config and metadata with the new name
-        config = self.profile_manager.get_profile(profile_id)
-        if not config:
-            iface.messageBar().pushMessage(
-                "Error",
-                "Could not load profile configuration to rename.",
-                level=Qgis.Critical,
-                duration=3
-            )
-            return
-        self.profile_manager.update_profile(profile_id, new_name, config)
-        self._refresh_profile_list()
-        iface.messageBar().pushMessage(
-            "Profile Renamed",
-            f"Renamed to '{new_name}'.",
-            level=Qgis.Info,
-            duration=3
-        )
+        if self._controller:
+            self._controller.rename_profile(profile_id, new_name)
     
-    def create_profile(self):
-        """Create profile from the form data."""
-        print("PLUGIN qAeroChart: Creating profile from embedded form...")
-        
-        # Validate and collect data
+    def create_profile(self) -> None:
+        """Create or update profile from the embedded form data."""
+        log("Creating profile from embedded form...")
+
         config = self._build_config_from_form()
-        
-        if config:
-            # Determine profile name (prefer explicit name field)
-            profile_name = None
-            if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
-                profile_name = self.profile_form_widget.lineEdit_profile_name.text().strip()
-            if not profile_name:
-                runway = config.get('runway', {})
-                profile_name = f"Profile {runway.get('direction', 'N/A')}"
-            
-            # If editing existing profile, update it; otherwise create new
-            if hasattr(self, 'current_profile_id') and self.current_profile_id:
-                self.profile_manager.update_profile(self.current_profile_id, profile_name, config)
-                message = "Profile has been updated successfully."
-            else:
-                self.profile_manager.save_profile(profile_name, config)
-                message = "Profile has been created and saved successfully."
-            
-            # Create/update layers
-            if hasattr(self, 'layer_manager') and self.layer_manager:
-                self._create_profile_layers(config)
-                
-                # Show success message
-                iface.messageBar().pushMessage(
-                    "Profile Saved",
-                    message,
-                    level=Qgis.Success,
-                    duration=5
-                )
-                
-                # Reset current profile ID
+        if not config:
+            return
+
+        profile_name = None
+        if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
+            profile_name = self.profile_form_widget.lineEdit_profile_name.text().strip()
+        if not profile_name:
+            runway = config.get('runway', {})
+            profile_name = f"Profile {runway.get('direction', 'N/A')}"
+
+        if self._controller:
+            saved = self._controller.save_or_update_profile(
+                profile_name, config, self.current_profile_id
+            )
+            if saved:
                 self.current_profile_id = None
-                # Clear name for next entry
                 try:
                     if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
                         self.profile_form_widget.lineEdit_profile_name.setText("")
-                except Exception:
+                except (AttributeError, RuntimeError):
                     pass
-                
-                # KEEP FORM OPEN - Don't go back to menu
-                # User can click "Back to Menu" if they want, or create another profile
-                print("PLUGIN qAeroChart: Profile created successfully. Form remains open for new profiles.")
-            else:
-                print("PLUGIN qAeroChart WARNING: Layer manager not available")
+                log("Profile saved. Form remains open for new profiles.")
     
     def _on_select_point_clicked(self):
         """Handle 'Select from Map' button click in embedded form."""
-        print("PLUGIN qAeroChart: Origin point selection requested (embedded form)")
-        print("PLUGIN qAeroChart: >>> CLICK ON THE MAP TO SELECT ORIGIN POINT <<<")
+        log("Origin point selection requested (embedded form)")
+        log(">>> CLICK ON THE MAP TO SELECT ORIGIN POINT <<<")
         
         # Update button text
         if hasattr(self.profile_form_widget, 'btn_select_point'):
@@ -950,7 +878,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self.profile_form_widget.btn_select_point.setText("Select from Map")
             self.profile_form_widget.btn_select_point.setEnabled(True)
         
-        print(f"PLUGIN qAeroChart: Origin point set to X={point.x():.2f}, Y={point.y():.2f}")
+        log(f"Origin point set to X={point.x():.2f}, Y={point.y():.2f}")
         
         # Deactivate map tool to finish selection and clear preview
         if hasattr(self, 'tool_manager') and self.tool_manager:
@@ -977,23 +905,20 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                             'distance_nm': float(dist or 0),
                             'elevation_ft': float(elev or 0)
                         })
-                    except:
+                    except (ValueError, TypeError):
                         continue
             # Runway params (optional for preview)
             try:
                 runway_len = float(form.lineEdit_length.text().strip() or 0)
                 tch_ft = float(form.lineEdit_tch_rdh.text().strip() or 0)
                 tch_m = tch_ft * 0.3048
-            except:
+            except (ValueError, AttributeError):
                 runway_len, tch_m = 0.0, 0.0
             
-            from .core.profile_chart_geometry import ProfileChartGeometry
-            # Use the same default VE as runtime population (10x) for preview
-            # Determine direction sign from current runway direction
             dir_text = form.lineEdit_direction.text().strip() if hasattr(form, 'lineEdit_direction') else ""
             try:
                 rwy_num = int(''.join(ch for ch in dir_text if ch.isdigit())[:2] or 0)
-            except Exception:
+            except ValueError:
                 rwy_num = 0
             dir_sign = -1 if rwy_num and rwy_num <= 18 else 1
             geometry = ProfileChartGeometry(origin_point, vertical_exaggeration=10.0, horizontal_direction=dir_sign)
@@ -1016,7 +941,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                             max_nm = ui_max
                 except Exception:
                     pass
-                # ticks (short) – keep visual height ~200 m after VE
+                # ticks (short) â€“ keep visual height ~200 m after VE
                 markers = geometry.create_distance_markers(max_nm, marker_height_m=(200.0/10.0))
                 for m in markers:
                     seg = m['geometry']  # [bottom, top]
@@ -1025,7 +950,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                         # Label at the top of the tick
                         top_pt = seg[1]
                         tick_labels.append({'pos': top_pt, 'text': str(m.get('label', m.get('distance', '')))} )
-                # grid (full-height) – keep visual height ~1500 m after VE (shorter to reduce clutter)
+                # grid (full-height) â€“ keep visual height ~1500 m after VE (shorter to reduce clutter)
                 grid = geometry.create_distance_markers(max_nm, marker_height_m=(1500.0/10.0))
                 for g in grid:
                     seg = g['geometry']
@@ -1053,7 +978,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 'tick_labels': tick_labels or []
             }
         except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: preview generation failed: {e}")
+            log(f"preview generation failed: {e}", "WARNING")
             return {'profile_line': [], 'tick_segments': [], 'tick_labels': []}
     
     def _build_config_from_form(self):
@@ -1072,14 +997,14 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if fallback_point:
                 # Use the last hovered point as origin and inform the user
                 self.reference_point = fallback_point
-                iface.messageBar().pushMessage(
+                self._iface.messageBar().pushMessage(
                     "Using Preview Point",
-                    "No origin was clicked — using last preview position as origin.",
+                    "No origin was clicked â€” using last preview position as origin.",
                     level=Qgis.Info,
                     duration=4
                 )
             else:
-                iface.messageBar().pushMessage(
+                self._iface.messageBar().pushMessage(
                     "Missing Origin Point",
                     "Please select an origin point from the map.",
                     level=Qgis.Warning,
@@ -1097,7 +1022,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Validate runway parameters
         if not all([runway['direction'], runway['length'], runway['thr_elevation'], runway['tch_rdh']]):
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "Missing Runway Parameters",
                 "Please fill in all runway parameters.",
                 level=Qgis.Warning,
@@ -1125,7 +1050,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 })
         
         if not profile_points:
-            iface.messageBar().pushMessage(
+            self._iface.messageBar().pushMessage(
                 "No Profile Points",
                 "Please add at least one profile point.",
                 level=Qgis.Warning,
@@ -1135,20 +1060,15 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         
         # Build minimal style config (Issue #9)
         form = self.profile_form_widget
-        vertical_exaggeration = 10.0
+        vertical_exaggeration = 10.0  # fixed; no UI control yet
         axis_max_nm = 12.0
-        # Vertical exaggeration is fixed to 10x (no UI control)
-        try:
-            vertical_exaggeration = 10.0
-        except Exception:
-            vertical_exaggeration = 10.0
         if hasattr(form, 'spinBox_axis_max_nm'):
             try:
                 axis_max_nm = float(form.spinBox_axis_max_nm.value())
             except Exception:
                 axis_max_nm = 12.0
         
-        # Derive explicit MOCA segments from table (use point i MOCA for segment i→i+1)
+        # Derive explicit MOCA segments from table (use point i MOCA for segment iâ†’i+1)
         moca_segments = []
         try:
             for i in range(len(profile_points) - 1):
@@ -1178,7 +1098,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                         'oca_ft': float(form.doubleSpinBox_oca_ft.value())
                     }
         except Exception as e:
-            print(f"PLUGIN qAeroChart WARNING: Could not read OCA UI: {e}")
+            log(f"Could not read OCA UI: {e}", "WARNING")
 
         # Build config
         config = {
@@ -1200,50 +1120,5 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             'oca': oca_value,
             'oca_segments': []
         }
-        
+
         return config
-    
-    # Old dialog methods removed - now using embedded form
-    
-    def _create_profile_layers(self, config):
-        """
-        Create profile layers based on configuration v2.0.
-        Uses ProfileChartGeometry for cartesian calculations.
-        
-        Args:
-            config (dict): Profile configuration from dialog (v2.0 format)
-        """
-        try:
-            print("PLUGIN qAeroChart: Creating profile layers v2.0...")
-            
-            # Create all layers with style config
-            layers = self.layer_manager.create_all_layers(config)
-            
-            # Populate layers using config (LayerManager handles all geometry calculations)
-            success = self.layer_manager.populate_layers_from_config(config)
-            
-            if success:
-                # Get counts for message
-                profile_points = config.get('profile_points', [])
-                runway_params = config.get('runway', {})
-                
-                # Show success message
-                iface.messageBar().pushMessage(
-                    "qAeroChart",
-                    f"Profile chart created: {runway_params.get('direction', 'N/A')} with {len(profile_points)} points",
-                    level=Qgis.Success,
-                    duration=5
-                )
-                
-                print(f"PLUGIN qAeroChart: Profile created successfully with {len(profile_points)} points")
-            else:
-                raise Exception("Failed to populate layers from configuration")
-            
-        except Exception as e:
-            print(f"PLUGIN qAeroChart ERROR: Failed to create profile layers: {str(e)}")
-            iface.messageBar().pushMessage(
-                "Error",
-                f"Failed to create profile layers: {str(e)}",
-                level=Qgis.Critical,
-                duration=5
-            )

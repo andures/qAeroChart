@@ -755,6 +755,11 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
     def rename_selected_profile(self) -> None:
         """Trigger rename for the currently selected profile (F2)."""
+        # Defensive import in case plugin loader strips or misses the module import
+        try:
+            from qgis.PyQt.QtWidgets import QInputDialog as _QID
+        except Exception:
+            _QID = None
         selected_items = self.listWidgetProfiles.selectedItems()
         if not selected_items:
             if self._iface:
@@ -779,9 +784,18 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         except (AttributeError, ValueError):
             current_name = item.text()
 
-        new_name, ok = QInputDialog.getText(
-            self, "Rename Profile", "New name:", text=current_name or ""
-        )
+        # Ask user for new name
+        dlg = _QID or QInputDialog
+        try:
+            new_name, ok = dlg.getText(self, "Rename Profile", "New name:", text=current_name or "")
+        except Exception:
+            iface.messageBar().pushMessage(
+                "Error",
+                "Unable to open rename dialog (QInputDialog not available).",
+                level=Qgis.Critical,
+                duration=4
+            )
+            return
         if not ok:
             return
         new_name = new_name.strip()

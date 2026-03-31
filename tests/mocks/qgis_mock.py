@@ -78,11 +78,18 @@ class _QObject:
 
 qgis_core = MagicMock()
 qgis_core.QgsPointXY = _QgsPointXY
-# Qgis message level constants used by ProfileController
-qgis_core.Qgis.Info = 0
-qgis_core.Qgis.Warning = 1
-qgis_core.Qgis.Critical = 2
-qgis_core.Qgis.Success = 3
+
+# Qgis message level constants used by ProfileController / VerticalScaleController.
+# Use a plain namespace instead of MagicMock so that missing attributes like
+# ``MessageLevel`` resolve to ``AttributeError`` (not auto-generated mocks).
+class _QgisMock:
+    """Minimal QGIS 3-style Qgis namespace (no MessageLevel sub-enum)."""
+    Info = 0
+    Warning = 1
+    Critical = 2
+    Success = 3
+
+qgis_core.Qgis = _QgisMock
 
 # Patch sys.modules so any "from qgis.core import ..." resolves to our stubs
 sys.modules.setdefault("qgis", MagicMock())

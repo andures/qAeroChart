@@ -20,7 +20,7 @@
  *                                                                         *
  ***************************************************************************/
 """
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 
@@ -30,6 +30,8 @@ from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
 from .vertical_scale_dialog import VerticalScaleDockWidget
+from .utils.logger import log
+from .utils.qt_compat import Qt
 import os.path
 
 
@@ -51,7 +53,7 @@ class QAeroChart:
         self.plugin_dir = os.path.dirname(__file__)
 
         # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        locale = (QSettings().value('locale/userLocale') or '')[0:2]
         locale_path = os.path.join(
             self.plugin_dir,
             'i18n',
@@ -266,13 +268,20 @@ class QAeroChart:
         except Exception:
             pass
         
-        # Initialize map tool manager
-        from .tools import ProfilePointToolManager
-        self.tool_manager = ProfilePointToolManager(
-            self.iface.mapCanvas(),
-            self.iface
-        )
-        log("Tool manager initialized")
+        # Initialize map tool manager — wrapped in try/except so a failure here
+        # does NOT prevent layer_manager / controller from initialising (the
+        # critical path for creating layers).
+        try:
+            from .tools import ProfilePointToolManager
+            self.tool_manager = ProfilePointToolManager(
+                self.iface.mapCanvas(),
+                self.iface
+            )
+            log("Tool manager initialized")
+        except Exception as e:
+            print(f"[qAeroChart] WARNING: tool_manager init failed: {e}")
+            log(f"Tool manager init failed: {e}", "WARNING")
+            self.tool_manager = None
 
         # Initialize layer manager and profile controller
         from .core import LayerManager, ProfileManager, ProfileController
@@ -280,41 +289,6 @@ class QAeroChart:
         self._profile_manager = ProfileManager()
         self._controller = ProfileController(self._profile_manager, self.layer_manager)
         log("Layer manager and profile controller initialized")
-
-        # Vertical scale toolbar action (Issue #57)
-        vs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_vertical_scale.svg')
-        self.vertical_scale_action = QAction(
-            QIcon(vs_icon_path),
-            self.tr('Vertical Scale'),
-            self.iface.mainWindow(),
-        )
-        self.vertical_scale_action.setObjectName('qAeroChartVerticalScaleAction')
-        self.vertical_scale_action.setStatusTip(
-            self.tr('Create a vertical scale bar (metres / feet)')
-        )
-        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
-        self.tools_toolbar.addAction(self.vertical_scale_action)
-        if self.top_menu:
-            self.top_menu.addAction(self.vertical_scale_action)
-
-    def open_vertical_scale_dock(self):
-        try:
-            if not self.vertical_scale_dock:
-                self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
-                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
-            else:
-                # Always start from the menu page to mimic profile flow
-                try:
-                    self.vertical_scale_dock.show_menu()
-                except Exception:
-                    pass
-            self.vertical_scale_dock.show()
-            self.vertical_scale_dock.raise_()
-        except Exception as e:
-            try:
-                self.iface.messageBar().pushCritical('qAeroChart', f'Could not open Vertical Scale dock: {e}')
-            except Exception:
-                print(f"PLUGIN qAeroChart ERROR: Could not open Vertical Scale dock: {e}")
 
     # --------------------------------------------------------------------------
 
@@ -412,13 +386,13 @@ class QAeroChart:
 
         try:
             designer = self.iface.activeLayoutDesignerInterface()
-            if designer and hasattr(designer, "layout") and designer.layout():
+            if designer is not None and hasattr(designer, "layout") and designer.layout() is not None:
                 return designer.layout().name()
         except Exception:
             pass
         try:
             designer = self.iface.activeLayoutDesigner()
-            if designer and hasattr(designer, "layout") and designer.layout():
+            if designer is not None and hasattr(designer, "layout") and designer.layout() is not None:
                 return designer.layout().name()
         except Exception:
             pass
@@ -437,7 +411,7 @@ class QAeroChart:
         parent_window = None
         try:
             designer = self.iface.activeLayoutDesignerInterface()
-            if designer:
+            if designer is not None:
                 parent_window = designer.window()
                 self._attach_action_to_designer(designer)
         except Exception:
@@ -445,7 +419,7 @@ class QAeroChart:
         if parent_window is None:
             try:
                 designer = self.iface.activeLayoutDesigner()
-                if designer:
+                if designer is not None:
                     parent_window = designer
                     self._attach_action_to_designer(designer)
             except Exception:
@@ -466,7 +440,7 @@ class QAeroChart:
             print(f"PLUGIN qAeroChart WARNING: Could not attach action to layout designer: {exc}")
 
     def _attach_action_to_designer(self, designer_iface):
-        if not self.distance_table_action or not designer_iface:
+        if self.distance_table_action is None or designer_iface is None:
             return
 
         # Preferred: use designer interface API (QGIS 3.x): add to tools toolbar
@@ -536,16 +510,8 @@ class QAeroChart:
     def open_vertical_scale_dock(self) -> None:
         """Open (or raise) the standalone Vertical Scale dock widget."""
         try:
-            from .core.vertical_scale_manager import VerticalScaleManager
-            from .core.vertical_scale_controller import VerticalScaleController
             if self.vertical_scale_dock is None:
-                vs_manager = VerticalScaleManager()
-                vs_controller = VerticalScaleController(vs_manager, self.layer_manager)
-                self.vertical_scale_dock = VerticalScaleDockWidget(
-                    controller=vs_controller,
-                    iface=self.iface,
-                    parent=self.iface.mainWindow(),
-                )
+                self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
             else:
                 self.vertical_scale_dock.show_menu()

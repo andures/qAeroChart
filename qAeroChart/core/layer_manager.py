@@ -15,7 +15,6 @@ from qgis.core import (
     QgsField,
     QgsProject,
     QgsLayerTreeGroup,
-    QgsWkbTypes,
     QgsFeature,
     QgsGeometry,
     QgsPointXY,
@@ -24,8 +23,8 @@ from qgis.core import (
 )
 
 from .profile_chart_geometry import ProfileChartGeometry
-from ..utils.logger import log
-from ..utils.qt_compat import Qt, QVariant
+from ..utils.logger import log, push_message
+from ..utils.qt_compat import Qt, QVariant, QgsUnitTypes, FontBold
 
 
 class LayerManager:
@@ -115,7 +114,6 @@ class LayerManager:
             if not (proj and proj.isValid()):
                 return "unknown"
             raw = getattr(proj, 'mapUnits', lambda: None)()
-            from qgis.core import QgsUnitTypes
             return {
                 QgsUnitTypes.DistanceMeters: "meters",
                 QgsUnitTypes.DistanceFeet: "feet",
@@ -128,18 +126,23 @@ class LayerManager:
     def _crs_is_geographic(self) -> bool:
         """Return True when the project CRS uses angular (degree) units."""
         try:
+            proj = self.project.crs() if self.project else None
+            if not (proj and proj.isValid()):
+                return False
+            # isGeographic() is the definitive check — available in all QGIS versions
+            # and correctly distinguishes e.g. "WGS 84 / UTM zone 16N" (projected, False)
+            # from "WGS 84" / EPSG:4326 (geographic, True).
+            if hasattr(proj, 'isGeographic'):
+                return bool(proj.isGeographic())
+            # Fallback: unit-based check
             units = self._crs_map_units()
             if units == "degrees":
                 return True
             if units in ("meters", "feet"):
                 return False
-            # Fallback: authid / description pattern
-            proj = self.project.crs() if self.project else None
-            if not (proj and proj.isValid()):
-                return False
+            # Last resort: only flag the canonical geographic CRS
             auth = proj.authid() or ""
-            desc = proj.description() or ""
-            return auth.endswith(":4326") or "WGS 84" in desc
+            return auth == "EPSG:4326"
         except Exception:
             return False
 
@@ -197,10 +200,9 @@ class LayerManager:
                 elif level_upper == "WARN":
                     self.iface.messageBar().pushWarning("qAeroChart", msg)
                 else:
-                    self.iface.messageBar().pushMessage("qAeroChart", msg, level=Qgis.Info, duration=4)
+                    push_message(self.iface, "qAeroChart", msg, duration=4)
             log(msg, level_upper)
         except Exception:
-            # Ensure logging never breaks execution
             try:
                 log(msg, level)
             except Exception:
@@ -269,6 +271,7 @@ class LayerManager:
             proj_crs = self.project.crs() if self.project else QgsCoordinateReferenceSystem()
             crs_auth = proj_crs.authid() if proj_crs and proj_crs.isValid() else "EPSG:4326"
             uri = f"{geom}?crs={crs_auth}"
+            print(f"[qAeroChart] Creating memory layer '{name}' uri='{uri}' id_type={id_type!r}")
             layer = QgsVectorLayer(uri, name, "memory")
             # Add standard 'id' field
             provider = layer.dataProvider()
@@ -276,8 +279,10 @@ class LayerManager:
             layer.updateFields()
             # Ensure CRS is applied
             self._ensure_layer_crs(layer)
+            print(f"[qAeroChart] Memory layer '{name}' created OK, valid={layer.isValid()}")
             return layer
         except Exception as e:
+            print(f"[qAeroChart] ERROR in _create_memory_layer '{name}': {e}")
             self._log(f"Failed to create memory layer '{name}': {e}", level="ERROR")
             # Return a minimal valid point layer as fallback
             try:
@@ -285,8 +290,10 @@ class LayerManager:
                 provider = layer.dataProvider()
                 provider.addAttributes([QgsField("id", id_type)])
                 layer.updateFields()
+                print(f"[qAeroChart] Fallback layer '{name}' created OK")
                 return layer
-            except Exception:
+            except Exception as e2:
+                print(f"[qAeroChart] Fallback layer '{name}' ALSO failed: {e2}")
                 return None
 
     def _ensure_layer_crs(self, layer: QgsVectorLayer):
@@ -318,6 +325,7 @@ class LayerManager:
             pass
 
         self._dbg("Starting create_all_layers()")
+        print(f"[qAeroChart] create_all_layers() called")
         log("Creating all profile layers...")
         # Enforce projected CRS; allow override via style.allow_geographic
         allow_geo = False
@@ -326,21 +334,38 @@ class LayerManager:
         except Exception:
             allow_geo = False
         self._dbg(f"create_all_layers: allow_geographic={allow_geo}")
-        if not self._crs_guard(enforce_block=(not allow_geo), show_message=True):
+        # Diagnostic: print CRS details before guard
+        try:
+            proj_crs = self.project.crs() if self.project else None
+            print(f"[qAeroChart][DIAG] CRS before guard: authid={proj_crs.authid() if proj_crs else 'N/A'}, isValid={proj_crs.isValid() if proj_crs else 'N/A'}, isGeographic={proj_crs.isGeographic() if proj_crs else 'N/A'}")
+            raw_units = getattr(proj_crs, 'mapUnits', lambda: None)() if proj_crs else None
+            print(f"[qAeroChart][DIAG] mapUnits raw={raw_units!r}, type={type(raw_units).__name__ if raw_units is not None else 'N/A'}")
+        except Exception as diag_e:
+            print(f"[qAeroChart][DIAG] CRS diagnostic failed: {diag_e}")
+        guard_result = self._crs_guard(enforce_block=(not allow_geo), show_message=True)
+        print(f"[qAeroChart][DIAG] _crs_guard returned: {guard_result}")
+        if not guard_result:
             self._log("Aborting layer creation due to geographic/invalid CRS", level="WARN")
+            print(f"[qAeroChart][DIAG] ABORTING create_all_layers due to CRS guard failure!")
             return {}
         
         # Create group first
         self._create_layer_group()
         
         # Create each layer (baseline merged into profile_line per Issue #24)
-        self.layers[self.LAYER_POINT_SYMBOL] = self._create_point_symbol_layer()
-        self.layers[self.LAYER_CARTO_LABEL] = self._create_carto_label_layer()
-        self.layers[self.LAYER_LINE] = self._create_line_layer()
-        # Merge key verticals and distance markers into profile_line per #40
-        self.layers[self.LAYER_MOCA] = self._create_moca_layer()
-        # Altitude scale bar (Issue #57)
-        self.layers[self.LAYER_VERTICAL_SCALE] = self._create_vertical_scale_layer()
+        for _layer_key, _layer_factory in [
+            (self.LAYER_POINT_SYMBOL, self._create_point_symbol_layer),
+            (self.LAYER_CARTO_LABEL, self._create_carto_label_layer),
+            (self.LAYER_LINE, self._create_line_layer),
+            (self.LAYER_MOCA, self._create_moca_layer),
+            (self.LAYER_VERTICAL_SCALE, self._create_vertical_scale_layer),
+        ]:
+            try:
+                self.layers[_layer_key] = _layer_factory()
+            except Exception as _e:
+                print(f"[qAeroChart] Layer '{_layer_key}' creation FAILED: {_e}")
+                self._log(f"Failed to create layer '{_layer_key}': {_e}", level="ERROR")
+                log(f"qAeroChart layer creation error for '{_layer_key}': {_e}", "ERROR")
 
         # Emit validity and field diagnostics
         for k, lyr in self.layers.items():
@@ -349,26 +374,51 @@ class LayerManager:
             except Exception as e:
                 self._log(f"Diag failed for layer '{k}': {e}", level="WARN")
         
+        print(f"[qAeroChart] Layers in self.layers after creation: {list(self.layers.keys())}")
         # Add layers to group and apply styles
         self._add_layers_to_group(config)
         
         log(f"Created {len(self.layers)} layers in group '{self.GROUP_NAME}'")
+        print(f"[qAeroChart] create_all_layers() done — {len(self.layers)} layers added to group")
         self._dbg("Finished create_all_layers()")
         
         return self.layers
     
+    def _find_group(self):
+        """Return a *fresh* reference to this manager's layer-tree group.
+
+        In QGIS 4 / SIP6 the Python wrapper returned by ``addGroup()`` can
+        become stale (``not wrapper`` evaluates True) even though the C++
+        object is alive.  Always re-finding by name avoids that trap.
+        """
+        try:
+            root = self.project.layerTreeRoot()
+            return root.findGroup(self.GROUP_NAME) if root else None
+        except Exception:
+            return None
+
     def _create_layer_group(self):
         """Create or get the layer group for profile charts."""
         root = self.project.layerTreeRoot()
+        print(f"[qAeroChart][GROUP] _create_layer_group: root={root!r}, GROUP_NAME='{self.GROUP_NAME}'")
         
         # Check if group already exists
         existing_group = root.findGroup(self.GROUP_NAME)
+        print(f"[qAeroChart][GROUP] findGroup returned: {existing_group!r}, bool={bool(existing_group) if existing_group is not None else 'is-None'}")
         
-        if existing_group:
+        # SIP6 FIX: QgsLayerTreeGroup.__bool__() returns False for valid
+        # objects in QGIS 4.  Always use 'is not None' instead of truthiness.
+        if existing_group is not None:
             self.layer_group = existing_group
             log(f"Using existing group '{self.GROUP_NAME}'")
+            print(f"[qAeroChart][GROUP] Reusing existing group")
         else:
-            self.layer_group = root.addGroup(self.GROUP_NAME)
+            new_group = root.addGroup(self.GROUP_NAME)
+            print(f"[qAeroChart][GROUP] addGroup returned: {new_group!r}")
+            # Re-find immediately: the pointer returned by addGroup() can
+            # become a dead SIP6 wrapper before we next use it.
+            self.layer_group = root.findGroup(self.GROUP_NAME)
+            print(f"[qAeroChart][GROUP] Re-find after addGroup: {self.layer_group!r}")
             log(f"Created new group '{self.GROUP_NAME}'")
         try:
             self._dbg(f"Group '{self.GROUP_NAME}' child count: {len(self.layer_group.children())}")
@@ -524,8 +574,28 @@ class LayerManager:
         Args:
             config (dict): Optional configuration with style parameters
         """
-        if not self.layer_group:
-            log("Layer group not found", "ERROR")
+        # In QGIS 4/SIP6 the stored wrapper can go stale; always re-find.
+        print(f"[qAeroChart][GROUP] _add_layers_to_group ENTER, self.layer_group={self.layer_group!r}")
+        group = self._find_group()
+        print(f"[qAeroChart][GROUP] _find_group() returned: {group!r}")
+        # SIP6 FIX: use 'is not None' — bool(QgsLayerTreeGroup) returns False
+        if group is not None:
+            self.layer_group = group
+        if self.layer_group is None:
+            # Group genuinely not found — re-create.
+            print("[qAeroChart][GROUP] WARNING: group is None! Attempting re-creation...")
+            log("Layer group not found, re-creating", "WARNING")
+            try:
+                self._create_layer_group()
+                group = self._find_group()
+                if group is not None:
+                    self.layer_group = group
+                    print(f"[qAeroChart][GROUP] Re-created group: {self.layer_group!r}")
+            except Exception as _gc_err:
+                print(f"[qAeroChart][GROUP] Re-creation failed: {_gc_err}")
+        if self.layer_group is None:
+            print("[qAeroChart][GROUP] FATAL: Cannot find or create layer group — aborting")
+            log("Layer group not found after re-creation attempt", "ERROR")
             return
         
         # Add layers to project and group in specific order
@@ -538,23 +608,65 @@ class LayerManager:
             self.LAYER_VERTICAL_SCALE,
         ]
         
+        print(f"[qAeroChart][DIAG] _add_layers_to_group: layer_group={self.layer_group!r}, layers_keys={list(self.layers.keys())}")
         for layer_name in layer_order:
             if layer_name in self.layers:
                 layer = self.layers[layer_name]
+                print(f"[qAeroChart][DIAG] Processing '{layer_name}': type={type(layer).__name__}, valid={layer.isValid()}, id={layer.id()}")
                 # Add to project
                 # Ensure CRS before adding (belt-and-suspenders)
                 self._ensure_layer_crs(layer)
-                self.project.addMapLayer(layer, False)
-                # Add to group
-                self.layer_group.addLayer(layer)
+                # Use the returned reference: in QGIS 4 / PyQt6, the original
+                # Python wrapper may become stale after C++ takes ownership.
+                registered = self.project.addMapLayer(layer, False)
+                print(f"[qAeroChart][DIAG] addMapLayer('{layer_name}') returned: {type(registered).__name__ if registered else None}, same_obj={registered is layer}")
+                if registered is None:
+                    print(f"[qAeroChart][DIAG] WARNING: addMapLayer returned None for '{layer_name}'")
+                    continue
+                # Update internal dict so downstream code uses the live reference
+                self.layers[layer_name] = registered
+                # Re-find group each iteration: SIP6 wrappers can go stale
+                # after addMapLayer / addLayer operations.
+                group = self._find_group()
+                if group is not None:
+                    self.layer_group = group
+                # Add to group using the registered reference
+                tree_layer = self.layer_group.addLayer(registered)
+                print(f"[qAeroChart][DIAG] addLayer('{layer_name}') returned tree_layer={tree_layer!r}")
                 log(f"Added '{layer_name}' to group")
                 try:
-                    self._dbg(f"  -> layer '{layer_name}' valid={layer.isValid()} count={layer.featureCount()} extent={[layer.extent().xMinimum(), layer.extent().yMinimum(), layer.extent().xMaximum(), layer.extent().yMaximum()]}")
+                    self._dbg(f"  -> layer '{layer_name}' valid={registered.isValid()} count={registered.featureCount()} extent={[registered.extent().xMinimum(), registered.extent().yMinimum(), registered.extent().xMaximum(), registered.extent().yMaximum()]}")
                 except Exception:
                     pass
+            else:
+                print(f"[qAeroChart][DIAG] '{layer_name}' NOT in self.layers, skipping")
         
+        # Final group check (re-find for fresh reference)
+        group = self._find_group()
+        if group is not None:
+            self.layer_group = group
+        print(f"[qAeroChart][DIAG] After adding all layers: group children count={len(self.layer_group.children()) if self.layer_group is not None else 'N/A'}")
+        try:
+            for child in (self.layer_group.children() if self.layer_group is not None else []):
+                print(f"[qAeroChart][DIAG]   child: {child.name()}, type={type(child).__name__}")
+        except Exception:
+            pass
+        # Check project registry
+        all_map_layers = self.project.mapLayers()
+        print(f"[qAeroChart][DIAG] Project mapLayers count={len(all_map_layers)}")
+        for lid, lyr in all_map_layers.items():
+            if 'profile' in lyr.name().lower():
+                print(f"[qAeroChart][DIAG]   registry: id={lid}, name={lyr.name()}, valid={lyr.isValid()}")
+
         # Apply basic styles to make features visible
-        self._apply_basic_styles(config)
+        print("[qAeroChart][DIAG] About to call _apply_basic_styles()...")
+        try:
+            self._apply_basic_styles(config)
+            print("[qAeroChart][DIAG] _apply_basic_styles() returned without error")
+        except Exception as _style_err:
+            import traceback
+            print(f"[qAeroChart][DIAG] _apply_basic_styles() RAISED: {_style_err}")
+            traceback.print_exc()
 
         # Move group to the top again (after new nodes were inserted)
         try:
@@ -574,7 +686,12 @@ class LayerManager:
     def _apply_basic_styles(self, config=None):
         """
         Apply basic symbology to layers to make them visible.
-        
+
+        Each styling section is wrapped in try/except so that a failure in one
+        layer (e.g. due to Qt6 strict-enum changes) does not prevent the
+        remaining layers from being styled and does not abort the caller
+        (create_all_layers -> populate_layers_from_config chain).
+
         Args:
             config (dict): Optional configuration with style parameters
         """
@@ -585,17 +702,18 @@ class LayerManager:
             QgsTextFormat,
             QgsPalLayerSettings,
             QgsVectorLayerSimpleLabeling,
-            QgsUnitTypes,
             QgsLineSymbol,
             QgsSingleSymbolRenderer,
             QgsNullSymbolRenderer,
             QgsProperty,
             Qgis,
-            QgsRuleBasedRenderer,
         )
         from qgis.PyQt.QtGui import QColor, QFont
-        
-        # Minimal, fixed styling (Issue #9: remove style parameters; rely on predefined styles later)
+        import traceback as _tb
+
+        print("[qAeroChart][STYLES] _apply_basic_styles() ENTER")
+
+        # Minimal, fixed styling (Issue #9)
         style = config.get('style', {}) if config else {}
         line_width = 2.0
         moca_border_width = 1.0
@@ -603,48 +721,72 @@ class LayerManager:
         line_color = '#000000'
         moca_fill = '#6464FF64'
         moca_hatch = '#000000'
-        
-        # Style for PROFILE_LINE - Single symbol (default 0.5 mm) per #40
+
+        # ---- PROFILE_LINE ----
         line_layer = self.layers.get(self.LAYER_LINE)
         if line_layer:
-            simple = QgsSimpleLineSymbolLayer()
-            simple.setColor(QColor(line_color))
             try:
-                simple.setCapStyle(Qt.FlatCap); simple.setJoinStyle(Qt.MiterJoin)
-            except Exception:
-                pass
-            simple.setWidth(0.5)
-            simple.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-            sym = QgsLineSymbol(); sym.appendSymbolLayer(simple)
-            line_layer.setRenderer(QgsSingleSymbolRenderer(sym))
-            line_layer.triggerRepaint()
-            log("Applied single-symbol style to profile_line (0.5mm)")
-        
-        # Style for PROFILE_POINT_SYMBOL - Red circles, configurable size (or hidden)
+                print(f"[qAeroChart][STYLES] Styling PROFILE_LINE: valid={line_layer.isValid()}, renderer={line_layer.renderer()!r}")
+                simple = QgsSimpleLineSymbolLayer()
+                simple.setColor(QColor(line_color))
+                try:
+                    simple.setCapStyle(Qt.FlatCap)
+                    simple.setJoinStyle(Qt.MiterJoin)
+                except Exception as cap_e:
+                    print(f"[qAeroChart][STYLES]   setCapStyle/setJoinStyle skipped: {cap_e}")
+                simple.setWidth(0.5)
+                simple.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+                # FIX: changeSymbolLayer(0) replaces the default sub-layer
+                # instead of appendSymbolLayer which created TWO sub-layers.
+                sym = QgsLineSymbol()
+                print(f"[qAeroChart][STYLES]   QgsLineSymbol default sub-layers: {sym.symbolLayerCount()}")
+                sym.changeSymbolLayer(0, simple)
+                print(f"[qAeroChart][STYLES]   After changeSymbolLayer(0): {sym.symbolLayerCount()} sub-layers")
+                line_layer.setRenderer(QgsSingleSymbolRenderer(sym))
+                line_layer.triggerRepaint()
+                print("[qAeroChart][STYLES]   PROFILE_LINE styled OK")
+                log("Applied single-symbol style to profile_line (0.5mm)")
+            except Exception as e:
+                print(f"[qAeroChart][STYLES] ERROR styling PROFILE_LINE: {e}")
+                _tb.print_exc()
+                log(f"PROFILE_LINE styling failed: {e}", "ERROR")
+
+        # ---- PROFILE_POINT_SYMBOL ----
         point_layer = self.layers.get(self.LAYER_POINT_SYMBOL)
         if point_layer:
-            symbol = QgsSymbol.defaultSymbol(point_layer.geometryType())
-            # Always show point symbols (Issue #9)
-            symbol.setColor(QColor(255, 0, 0))  # Red
-            symbol.setSize(point_size)
-            symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
-            point_layer.renderer().setSymbol(symbol)
-            point_layer.triggerRepaint()
-            log(f"Applied style to profile_point_symbol (visible=True)")
-        
+            try:
+                print(f"[qAeroChart][STYLES] Styling PROFILE_POINT_SYMBOL: valid={point_layer.isValid()}, geomType={point_layer.geometryType()!r}")
+                symbol = QgsSymbol.defaultSymbol(point_layer.geometryType())
+                print(f"[qAeroChart][STYLES]   defaultSymbol: {symbol!r}")
+                symbol.setColor(QColor(255, 0, 0))  # Red
+                symbol.setSize(point_size)
+                symbol.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+                # FIX: null-check renderer before calling setSymbol
+                renderer = point_layer.renderer()
+                print(f"[qAeroChart][STYLES]   point_layer.renderer() = {renderer!r}")
+                if renderer is not None:
+                    renderer.setSymbol(symbol)
+                else:
+                    print("[qAeroChart][STYLES]   WARNING: renderer is None - creating new renderer")
+                    point_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+                point_layer.triggerRepaint()
+                print("[qAeroChart][STYLES]   PROFILE_POINT_SYMBOL styled OK")
+                log(f"Applied style to profile_point_symbol (visible=True)")
+            except Exception as e:
+                print(f"[qAeroChart][STYLES] ERROR styling PROFILE_POINT_SYMBOL: {e}")
+                _tb.print_exc()
+                log(f"PROFILE_POINT_SYMBOL styling failed: {e}", "ERROR")
+
         # PROFILE_DIST merged into PROFILE_LINE per #40
-        
-        # Style for PROFILE_MOCA - Configurable hatching pattern
+
+        # ---- PROFILE_MOCA ----
         moca_layer = self.layers.get(self.LAYER_MOCA)
         if moca_layer:
-            from qgis.core import QgsFillSymbol, QgsLinePatternFillSymbolLayer, QgsSimpleFillSymbolLayer
-            
             try:
-                # Parse colors from hex
-                # Use transparent fill to mimic eAIP hatch-only look
+                from qgis.core import QgsFillSymbol, QgsLinePatternFillSymbolLayer, QgsSimpleFillSymbolLayer
+                print(f"[qAeroChart][STYLES] Styling PROFILE_MOCA: valid={moca_layer.isValid()}, renderer={moca_layer.renderer()!r}")
+
                 color_str = '0,0,0,0'
-                
-                # Create fill symbol with configurable parameters
                 symbol = QgsFillSymbol.createSimple({
                     'color': color_str,
                     'outline_color': moca_hatch,
@@ -652,90 +794,131 @@ class LayerManager:
                     'outline_width_unit': 'MM',
                     'outline_style': 'solid'
                 })
-                
-                # Try to add diagonal line pattern
+                print(f"[qAeroChart][STYLES]   MOCA fill created with {symbol.symbolLayerCount()} sub-layers")
+
                 line_pattern = QgsLinePatternFillSymbolLayer()
-                line_pattern.setDistance(1.6)  # slightly tighter spacing
+                line_pattern.setDistance(1.6)
                 line_pattern.setDistanceUnit(QgsUnitTypes.RenderMillimeters)
-                line_pattern.setLineAngle(45)  # 45 degree diagonal
-                
-                # Configure line style
+                line_pattern.setLineAngle(45)
+
                 line_symbol = line_pattern.subSymbol()
                 if line_symbol:
                     line_symbol.setColor(QColor(moca_hatch))
-                    line_symbol.setWidth(0.4)  # finer lines
+                    line_symbol.setWidth(0.4)
                     line_symbol.setWidthUnit(QgsUnitTypes.RenderMillimeters)
-                
-                symbol.appendSymbolLayer(line_pattern)
-                
+
+                # FIX: replace the default sub-layer instead of appending a second one
+                if symbol.symbolLayerCount() > 0:
+                    symbol.changeSymbolLayer(0, line_pattern)
+                    print("[qAeroChart][STYLES]   MOCA: replaced default sub-layer with line_pattern")
+                else:
+                    symbol.appendSymbolLayer(line_pattern)
+                    print("[qAeroChart][STYLES]   MOCA: appended line_pattern (no default)")
+
+                # FIX: null-check renderer
+                renderer = moca_layer.renderer()
+                print(f"[qAeroChart][STYLES]   moca_layer.renderer() = {renderer!r}")
+                if renderer is not None:
+                    renderer.setSymbol(symbol)
+                else:
+                    print("[qAeroChart][STYLES]   WARNING: moca renderer is None - creating new renderer")
+                    moca_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
+                moca_layer.triggerRepaint()
+                print("[qAeroChart][STYLES]   PROFILE_MOCA styled OK")
+                log(f"Applied style to profile_MOCA (border: {moca_border_width}mm)")
             except Exception as e:
-                # Fallback to simple fill if pattern fails
-                log(f"Could not create hatching pattern: {e}", "WARNING")
-                symbol = QgsFillSymbol.createSimple({
-                    'color': '100,100,255,150',
-                    'outline_color': 'black',
-                    'outline_width': str(moca_border_width),
-                    'outline_width_unit': 'MM'
-                })
-            
-            moca_layer.renderer().setSymbol(symbol)
-            moca_layer.triggerRepaint()
-            log(f"Applied style to profile_MOCA (border: {moca_border_width}mm)")
+                print(f"[qAeroChart][STYLES] ERROR styling PROFILE_MOCA: {e}")
+                _tb.print_exc()
+                log(f"PROFILE_MOCA styling failed: {e}", "ERROR")
+                # Fallback: simple solid fill so layer is at least visible
+                try:
+                    from qgis.core import QgsFillSymbol
+                    fb_sym = QgsFillSymbol.createSimple({
+                        'color': '100,100,255,150',
+                        'outline_color': 'black',
+                        'outline_width': str(moca_border_width),
+                        'outline_width_unit': 'MM'
+                    })
+                    renderer = moca_layer.renderer()
+                    if renderer is not None:
+                        renderer.setSymbol(fb_sym)
+                    else:
+                        moca_layer.setRenderer(QgsSingleSymbolRenderer(fb_sym))
+                    moca_layer.triggerRepaint()
+                    print("[qAeroChart][STYLES]   PROFILE_MOCA fallback applied")
+                except Exception as fb_e:
+                    print(f"[qAeroChart][STYLES]   PROFILE_MOCA fallback also failed: {fb_e}")
 
-        # Baseline layer styling removed; baseline is rendered in profile_line via rule-based styling
-
-        
-        
-        # Style for CARTO_LABEL - Configure text labels
+        # ---- CARTO_LABEL ----
         label_layer = self.layers.get(self.LAYER_CARTO_LABEL)
         if label_layer:
-            # Use 'No Symbols' renderer â€“ only labels should be drawn (Issue #39)
             try:
-                label_layer.setRenderer(QgsNullSymbolRenderer())
-            except Exception:
-                # Fallback to transparent symbol if Null renderer unavailable
-                symbol = QgsSymbol.defaultSymbol(label_layer.geometryType())
-                symbol.setColor(QColor(0, 0, 0, 0))
-                symbol.setSize(0.01)
-                label_layer.renderer().setSymbol(symbol)
-            
-            # Configure text format for labels
-            text_format = QgsTextFormat()
-            text_format.setFont(QFont("Arial", 10, QFont.Bold))
-            text_format.setSize(10)
-            text_format.setColor(QColor(0, 0, 0))  # Black text
-            
-            # Optional: Add text buffer (white outline) for better visibility
-            from qgis.core import QgsTextBufferSettings
-            buffer = QgsTextBufferSettings()
-            buffer.setEnabled(True)
-            buffer.setSize(1.0)
-            buffer.setColor(QColor(255, 255, 255))  # White buffer
-            text_format.setBuffer(buffer)
-            
-            # Create label settings
-            label_settings = QgsPalLayerSettings()
-            label_settings.fieldName = 'txt_label'  # Field containing the text to display
-            label_settings.enabled = True
-            label_settings.setFormat(text_format)
-            
-            # Position labels slightly above the point (QGIS 3.40+ uses Qgis.LabelPlacement enum)
-            label_settings.placement = Qgis.LabelPlacement.OverPoint
-            label_settings.yOffset = 0.0
+                print(f"[qAeroChart][STYLES] Styling CARTO_LABEL: valid={label_layer.isValid()}")
+                try:
+                    label_layer.setRenderer(QgsNullSymbolRenderer())
+                    print("[qAeroChart][STYLES]   QgsNullSymbolRenderer set")
+                except Exception as nr_e:
+                    print(f"[qAeroChart][STYLES]   QgsNullSymbolRenderer failed: {nr_e}, using transparent fallback")
+                    symbol = QgsSymbol.defaultSymbol(label_layer.geometryType())
+                    symbol.setColor(QColor(0, 0, 0, 0))
+                    symbol.setSize(0.01)
+                    renderer = label_layer.renderer()
+                    if renderer is not None:
+                        renderer.setSymbol(symbol)
+                    else:
+                        label_layer.setRenderer(QgsSingleSymbolRenderer(symbol))
 
-            # Data-defined rotation from attribute 'rotation' when provided (e.g., slope labels)
-            try:
-                label_settings.setDataDefinedProperty(QgsPalLayerSettings.Rotation, QgsProperty.fromField('txt_rotation'))
-            except Exception:
-                pass
-            
-            # Apply labeling to layer
-            labeling = QgsVectorLayerSimpleLabeling(label_settings)
-            label_layer.setLabeling(labeling)
-            label_layer.setLabelsEnabled(True)
-            
-            log("Applied labeling to profile_carto_label (black text with white buffer)")
+                text_format = QgsTextFormat()
+                text_format.setFont(QFont("Arial", 10, FontBold))
+                text_format.setSize(10)
+                text_format.setColor(QColor(0, 0, 0))
 
+                from qgis.core import QgsTextBufferSettings
+                buffer = QgsTextBufferSettings()
+                buffer.setEnabled(True)
+                buffer.setSize(1.0)
+                buffer.setColor(QColor(255, 255, 255))
+                text_format.setBuffer(buffer)
+
+                label_settings = QgsPalLayerSettings()
+                label_settings.fieldName = 'txt_label'
+                label_settings.enabled = True
+                label_settings.setFormat(text_format)
+
+                try:
+                    label_settings.placement = Qgis.LabelPlacement.OverPoint
+                except AttributeError:
+                    try:
+                        label_settings.placement = QgsPalLayerSettings.OverPoint
+                    except AttributeError:
+                        pass
+                label_settings.yOffset = 0.0
+
+                try:
+                    _rot = getattr(QgsPalLayerSettings, 'Rotation', None)
+                    if _rot is None:
+                        _prop_enum = getattr(QgsPalLayerSettings, 'Property', None)
+                        if _prop_enum is not None:
+                            _rot = getattr(_prop_enum, 'LabelRotation', None)
+                    if _rot is not None:
+                        label_settings.setDataDefinedProperty(
+                            _rot, QgsProperty.fromField('txt_rotation')
+                        )
+                        print(f"[qAeroChart][STYLES]   Label rotation property: {_rot!r}")
+                except Exception as rot_e:
+                    print(f"[qAeroChart][STYLES]   Label rotation skipped: {rot_e}")
+
+                labeling = QgsVectorLayerSimpleLabeling(label_settings)
+                label_layer.setLabeling(labeling)
+                label_layer.setLabelsEnabled(True)
+                print("[qAeroChart][STYLES]   CARTO_LABEL styled OK")
+                log("Applied labeling to profile_carto_label (black text with white buffer)")
+            except Exception as e:
+                print(f"[qAeroChart][STYLES] ERROR styling CARTO_LABEL: {e}")
+                _tb.print_exc()
+                log(f"CARTO_LABEL styling failed: {e}", "ERROR")
+
+        print("[qAeroChart][STYLES] _apply_basic_styles() EXIT")
         # KEY VERTICALS merged into PROFILE_LINE per #40
     
     def add_point_feature(self, point, point_name, point_type="fix", 
@@ -879,11 +1062,12 @@ class LayerManager:
                 self.project.removeMapLayer(layer.id())
                 log(f"Removed layer '{layer_name}'")
         
-        # Remove group if empty
-        if self.layer_group:
+        # Remove group if empty — re-find to avoid stale SIP6 wrapper
+        group = self._find_group()
+        if group is not None:
             root = self.project.layerTreeRoot()
-            if len(self.layer_group.children()) == 0:
-                root.removeChildNode(self.layer_group)
+            if len(group.children()) == 0:
+                root.removeChildNode(group)
                 log(f"Removed empty group '{self.GROUP_NAME}'")
         
         self.layers.clear()
@@ -1072,12 +1256,11 @@ class LayerManager:
                 QgsSimpleLineSymbolLayer as _SLL,
                 QgsLineSymbol as _LS,
                 QgsSingleSymbolRenderer as _SSR,
-                QgsUnitTypes as _QUT,
             )
             _sl = _SLL()
             _sl.setColor(QColor("black"))
             _sl.setWidth(0.25)
-            _sl.setWidthUnit(_QUT.RenderMillimeters)
+            _sl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
             _sym = _LS()
             _sym.changeSymbolLayer(0, _sl)
             lines_layer.setRenderer(_SSR(_sym))
@@ -1316,6 +1499,7 @@ class LayerManager:
             bool: True if successful
         """
         self._dbg("Starting populate_layers_from_config()")
+        print(f"[qAeroChart][DIAG] populate_layers_from_config called, layers_keys={list(self.layers.keys())}")
         log("Populating layers from config v2.0...")
         self._dbg("PHASE: BEGIN population")
         log(f"Config keys: {list(config.keys())}")
@@ -1798,6 +1982,7 @@ class LayerManager:
         log(f"=== BATCH ADDING FEATURES ===")
         self._dbg("PHASE: BATCH ADD start")
         log(f"Features to add - Points: {len(point_features)}, Labels: {len(label_features)}, Lines: {len(line_features)}, MOCA: {len(moca_features)}")
+        print(f"[qAeroChart][POP] BATCH: points={len(point_features)}, labels={len(label_features)}, lines={len(line_features)}, moca={len(moca_features)}")
         
         if point_features and layer_point:
             layer_point.startEditing()
@@ -1807,8 +1992,10 @@ class LayerManager:
             layer_point.triggerRepaint()
             if not commit_success:
                 log(f"âŒ POINTS COMMIT FAILED! Errors: {layer_point.commitErrors()}")
+                print(f"[qAeroChart][POP] POINTS COMMIT FAILED: {layer_point.commitErrors()}")
             log(f"âœ… Added {len(point_features)} point features (addFeatures={success}, commit={commit_success})")
             self._dbg(f"Point layer now has {layer_point.featureCount()} features")
+            print(f"[qAeroChart][POP] Points: add={success}, commit={commit_success}, count={layer_point.featureCount()}")
         
         if label_features and layer_label:
             layer_label.startEditing()
@@ -1818,8 +2005,10 @@ class LayerManager:
             layer_label.triggerRepaint()
             if not commit_success:
                 log(f"âŒ LABELS COMMIT FAILED! Errors: {layer_label.commitErrors()}")
+                print(f"[qAeroChart][POP] LABELS COMMIT FAILED: {layer_label.commitErrors()}")
             log(f"âœ… Added {len(label_features)} label features (addFeatures={success}, commit={commit_success})")
             self._dbg(f"Label layer now has {layer_label.featureCount()} features")
+            print(f"[qAeroChart][POP] Labels: add={success}, commit={commit_success}, count={layer_label.featureCount()}")
 
         # Distance markers and key verticals are merged into profile_line per #40; commit line features
         log(f"=== ADDING LINE FEATURES ===")
@@ -1838,6 +2027,7 @@ class LayerManager:
         if not commit_success:
             errors = layer_line.commitErrors()
             log(f"âŒ LINE COMMIT FAILED! Errors: {errors}")
+            print(f"[qAeroChart][POP] LINE COMMIT FAILED: {errors}")
 
         layer_line.updateExtents()
         layer_line.triggerRepaint()
@@ -1848,6 +2038,8 @@ class LayerManager:
         log(f"âœ… Added {len(line_features)} line features (addFeatures={success}, commit={commit_success})")
         log(f"Line layer extent: {extent.xMinimum():.2f}, {extent.yMinimum():.2f} to {extent.xMaximum():.2f}, {extent.yMaximum():.2f}")
         log(f"Line layer feature count: {feature_count}")
+        print(f"[qAeroChart][POP] Lines extent: {extent.xMinimum():.2f},{extent.yMinimum():.2f} -> {extent.xMaximum():.2f},{extent.yMaximum():.2f}")
+        print(f"[qAeroChart][POP] Lines: add={success}, commit={commit_success}, count={feature_count}")
 
         # Fallback: if for any reason no line features present, attempt to rebuild once
         if feature_count == 0:
@@ -1880,10 +2072,10 @@ class LayerManager:
                     log(f"Fallback rebuild line -> add={ok_add}, commit={ok_commit}")
                     try:
                         if self.iface:
-                            self.iface.messageBar().pushMessage(
-                                "qAeroChart",
+                            from ..utils.qt_compat import MsgLevel
+                            push_message(self.iface, "qAeroChart",
                                 "Profile line rebuilt due to empty layer after first pass.",
-                                level=Qgis.Info,
+                                level=MsgLevel.Info,
                                 duration=4
                             )
                     except Exception:
@@ -1914,6 +2106,7 @@ class LayerManager:
             if not commit_success:
                 errors = layer_moca.commitErrors()
                 log(f"âŒ MOCA COMMIT FAILED! Errors: {errors}")
+                print(f"[qAeroChart][POP] MOCA COMMIT FAILED: {errors}")
 
             layer_moca.updateExtents()
             layer_moca.triggerRepaint()
@@ -1924,6 +2117,8 @@ class LayerManager:
             log(f"âœ… Added {len(moca_features)} MOCA features (addFeatures={success}, commit={commit_success})")
             log(f"MOCA layer extent: {extent.xMinimum():.2f}, {extent.yMinimum():.2f} to {extent.xMaximum():.2f}, {extent.yMaximum():.2f}")
             log(f"MOCA layer feature count: {feature_count}")
+            print(f"[qAeroChart][POP] MOCA extent: {extent.xMinimum():.2f},{extent.yMinimum():.2f} -> {extent.xMaximum():.2f},{extent.yMaximum():.2f}")
+            print(f"[qAeroChart][POP] MOCA: add={success}, commit={commit_success}, count={feature_count}")
 
         # Baseline is added into profile_line (Issue #24); no separate baseline layer
 
@@ -1933,20 +2128,33 @@ class LayerManager:
         if self.iface:
             self.iface.mapCanvas().refresh()
             log(f"âœ… Canvas refreshed")
+            print("[qAeroChart][POP] Canvas refreshed")
 
         # Auto-zoom to profile extent
         if layer_line and layer_line.featureCount() > 0:
             extent = layer_line.extent()
             # Add 20% buffer around the profile
             extent.scale(1.2)
+            print(f"[qAeroChart][POP] Auto-zoom extent: {extent.xMinimum():.2f},{extent.yMinimum():.2f} -> {extent.xMaximum():.2f},{extent.yMaximum():.2f}")
             self.iface.mapCanvas().setExtent(extent)
             self.iface.mapCanvas().refresh()
             log(f"âœ… Auto-zoomed to profile extent")
+            print(f"[qAeroChart][POP] Auto-zoomed to extent")
+        else:
+            print(f"[qAeroChart][POP] WARNING: No auto-zoom! layer_line={layer_line!r}, featureCount={layer_line.featureCount() if layer_line else 'N/A'}")
 
             # View scale enforcement removed (Issue #9)
 
         log("=== LAYER POPULATION COMPLETE ===")
         self._dbg("PHASE: END population")
         self._dbg("Finished populate_layers_from_config()")
+
+        # Final summary for Python console
+        print("[qAeroChart][POP] === POPULATION COMPLETE ===")
+        for _lk, _lv in self.layers.items():
+            try:
+                print(f"[qAeroChart][POP]   {_lk}: valid={_lv.isValid()}, features={_lv.featureCount()}, renderer={type(_lv.renderer()).__name__ if _lv.renderer() else 'None'}")
+            except Exception:
+                print(f"[qAeroChart][POP]   {_lk}: <error reading layer>")
 
         return True

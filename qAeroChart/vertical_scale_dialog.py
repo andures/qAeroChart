@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Vertical Scale dock widget with menu + form flow."""
 
 from qgis.PyQt import QtWidgets
-from qgis.PyQt.QtCore import Qt
+from .utils.qt_compat import Qt
 from qgis.PyQt.QtWidgets import (
     QLabel,
     QDoubleSpinBox,
@@ -19,18 +19,20 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QInputDialog,
 )
-from qgis.gui import QgsMapToolEmitPoint
-from qgis.core import QgsPointXY, QgsPoint, Qgis
+from qgis.core import QgsPointXY, QgsPoint
+from .utils.qt_compat import MsgLevel
 from qgis.utils import iface
 from .scripts.Vertical_Scale import run_vertical_scale, _scale_factor
 from .tools.profile_point_tool import ProfilePointToolManager
-from qgis.PyQt.QtGui import QShortcut, QKeySequence
+from qgis.PyQt.QtWidgets import QShortcut
+from qgis.PyQt.QtGui import QKeySequence
 from .vertical_scale_manager import VerticalScaleManager
 
 
 class VerticalScaleDockWidget(QtWidgets.QDockWidget):
     def __init__(self, parent=None):
-        super().__init__(parent or iface.mainWindow())
+        _fallback = iface.mainWindow() if iface else None
+        super().__init__(parent or _fallback)
         self.setWindowTitle("Vertical Scale")
         self.setObjectName("VerticalScaleDock")
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
@@ -107,17 +109,17 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
 
         menu_buttons = QHBoxLayout()
         menu_buttons.setSpacing(6)
-        self.btn_new = QPushButton("➕ New Scale")
+        self.btn_new = QPushButton("+ New Scale")
         self.btn_new.setMinimumHeight(35)
         self.btn_new.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
 
-        self.btn_run_selected = QPushButton("▶️ Run Selected")
+        self.btn_run_selected = QPushButton("Run Selected")
         self.btn_run_selected.setMinimumHeight(35)
 
-        self.btn_edit = QPushButton("✏️ Edit Selected")
+        self.btn_edit = QPushButton("Edit Selected")
         self.btn_edit.setMinimumHeight(35)
 
-        self.btn_delete = QPushButton("🗑️ Delete")
+        self.btn_delete = QPushButton("Delete")
         self.btn_delete.setMinimumHeight(35)
         self.btn_delete.setStyleSheet("background-color: #f44336; color: white;")
         self.btn_edit.setEnabled(False)
@@ -218,8 +220,10 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         form_ranges.addRow("Feet step", self._spin_field("ft_step", QSpinBox, 1, 5000, 50, 5))
         layout.addWidget(grp_ranges)
 
-        # Spacer to push buttons down if room
-        layout.addSpacerItem(QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed))
+        # Spacer to push buttons down if room — use compat for PyQt6 strict enums
+        _sp_min = getattr(QSizePolicy, 'Minimum', None) or QSizePolicy.Policy.Minimum
+        _sp_fixed = getattr(QSizePolicy, 'Fixed', None) or QSizePolicy.Policy.Fixed
+        layout.addSpacerItem(QSpacerItem(20, 10, _sp_min, _sp_fixed))
 
         return layout
 
@@ -419,9 +423,9 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         if not self.run_history:
             return
         menu = QtWidgets.QMenu(self.list_scales)
-        act_rename = menu.addAction("Rename… (F2)")
+        act_rename = menu.addAction("Rename... (F2)")
         act_delete = menu.addAction("Delete")
-        action = menu.exec_(self.list_scales.mapToGlobal(pos))
+        action = (menu.exec_ if hasattr(menu, 'exec_') else menu.exec)(self.list_scales.mapToGlobal(pos))
         if action == act_rename:
             self._rename_selected()
         elif action == act_delete:
@@ -433,7 +437,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             iface.messageBar().pushMessage(
                 "No Selection",
                 "Select a scale to rename.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=3,
             )
             return
@@ -446,7 +450,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             iface.messageBar().pushMessage(
                 "Invalid Name",
                 "Name cannot be empty.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=3,
             )
             return
@@ -615,7 +619,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
                     lbl = p1.project(tick_len * 0.75, angle - 90)
                     tick_labels.append({"pos": QgsPointXY(lbl), "text": str(val_ft)})
 
-            # Main baseline preview (left feet start → right meters end)
+            # Main baseline preview (left feet start â†’ right meters end)
             if feet_ticks and meter_ticks:
                 profile_line = [feet_ticks[0], meter_ticks[-1]]
             elif meter_ticks:

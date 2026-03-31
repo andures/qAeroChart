@@ -8,19 +8,27 @@ This opens a dialog to build or load a table (e.g., from JSON) and then
 inserts it into the selected print layout using QgsLayoutItemManualTable.
 """
 
-from PyQt5 import QtWidgets
-from PyQt5.QtGui import QColor, QFont
+try:
+    from qgis.PyQt import QtWidgets
+    from qgis.PyQt.QtGui import QColor, QFont
+except ImportError:
+    try:
+        from PyQt6 import QtWidgets  # type: ignore
+        from PyQt6.QtGui import QColor, QFont  # type: ignore
+    except ImportError:
+        from PyQt5 import QtWidgets  # type: ignore
+        from PyQt5.QtGui import QColor, QFont  # type: ignore
 from qgis.core import (
     QgsProject,
     QgsLayoutPoint,
     QgsLayoutSize,
-    QgsUnitTypes,
     QgsLayoutItemManualTable,
     QgsTableCell,
     QgsTextFormat,
     QgsLayoutFrame,
     QgsPrintLayout,
 )
+from qAeroChart.utils.qt_compat import QgsUnitTypes
 
 from qAeroChart.ui.distance_altitude_table_dialog import DistanceAltitudeTableDialog
 
@@ -147,7 +155,9 @@ def run(iface=None, default_layout_name=None, parent_window=None, **_):
         except Exception:
             pass
 
-    if dlg.exec_() != QtWidgets.QDialog.Accepted:
+    # PyQt6 removed exec_() — use exec() instead; Accepted=1 so truthiness check works for both
+    result = (dlg.exec_ if hasattr(dlg, 'exec_') else dlg.exec)()
+    if not result:
         return
 
     table_rows = dlg.table_data()

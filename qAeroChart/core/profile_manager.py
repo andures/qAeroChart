@@ -2,9 +2,14 @@
 """
 Profile Manager - Manages stored profile configurations in QGIS project
 """
+from __future__ import annotations
 
 from qgis.core import QgsProject
 import json
+import time
+import uuid
+
+from ..utils.logger import log
 
 
 class ProfileManager:
@@ -26,7 +31,7 @@ class ProfileManager:
         """Initialize profile manager."""
         self.project = QgsProject.instance()
     
-    def get_all_profiles(self):
+    def get_all_profiles(self) -> list[dict]:
         """
         Get list of all saved profiles.
         
@@ -36,10 +41,10 @@ class ProfileManager:
         profile_list_json = self.project.readEntry("qAeroChart", self.PROFILE_LIST_KEY, "[]")[0]
         try:
             return json.loads(profile_list_json)
-        except:
+        except (json.JSONDecodeError, ValueError):
             return []
     
-    def save_profile(self, profile_name, config):
+    def save_profile(self, profile_name: str, config: dict) -> str:
         """
         Save a profile configuration to the project.
         
@@ -50,10 +55,8 @@ class ProfileManager:
         Returns:
             str: Profile ID
         """
-        import time
-        
-        # Generate unique profile ID
-        profile_id = f"profile_{int(time.time() * 1000)}"
+        # Generate unique profile ID (uuid4 guarantees no collisions)
+        profile_id = f"profile_{uuid.uuid4().hex}"
         
         # Save full config
         config_json = json.dumps(config)
@@ -77,11 +80,11 @@ class ProfileManager:
         # Save updated list
         self.project.writeEntry("qAeroChart", self.PROFILE_LIST_KEY, json.dumps(profiles))
         
-        print(f"PLUGIN qAeroChart: Saved profile '{profile_name}' with ID {profile_id}")
+        log(f"Saved profile '{profile_name}' with ID {profile_id}")
         
         return profile_id
     
-    def get_profile(self, profile_id):
+    def get_profile(self, profile_id: str) -> dict | None:
         """
         Get a profile configuration by ID.
         
@@ -98,10 +101,10 @@ class ProfileManager:
         
         try:
             return json.loads(config_json)
-        except:
+        except (json.JSONDecodeError, ValueError):
             return None
     
-    def update_profile(self, profile_id, profile_name, config):
+    def update_profile(self, profile_id: str, profile_name: str, config: dict) -> bool:
         """
         Update an existing profile.
         
@@ -122,20 +125,25 @@ class ProfileManager:
         profile_points = config.get('profile_points', [])
         runway = config.get('runway', {})
         
+        found = False
         for profile in profiles:
             if profile['id'] == profile_id:
                 profile['name'] = profile_name
                 profile['runway_direction'] = runway.get('direction', 'N/A')
                 profile['point_count'] = len(profile_points)
+                found = True
                 break
+        
+        if not found:
+            raise KeyError(f"Profile '{profile_id}' not found in stored list")
         
         self.project.writeEntry("qAeroChart", self.PROFILE_LIST_KEY, json.dumps(profiles))
         
-        print(f"PLUGIN qAeroChart: Updated profile '{profile_name}'")
+        log(f"Updated profile '{profile_name}'")
         
         return True
     
-    def delete_profile(self, profile_id):
+    def delete_profile(self, profile_id: str) -> bool:
         """
         Delete a profile from the project.
         
@@ -153,11 +161,11 @@ class ProfileManager:
         profiles = [p for p in profiles if p['id'] != profile_id]
         self.project.writeEntry("qAeroChart", self.PROFILE_LIST_KEY, json.dumps(profiles))
         
-        print(f"PLUGIN qAeroChart: Deleted profile {profile_id}")
+        log(f"Deleted profile {profile_id}")
         
         return True
     
-    def get_profile_display_name(self, profile_metadata):
+    def get_profile_display_name(self, profile_metadata: dict) -> str:
         """
         Generate a display name for the profile list.
         

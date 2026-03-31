@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>ProfileCreationDialogBase</class>
- <widget class="QDialog" name="ProfileCreationDialogBase">
+ <widget class="QWidget" name="ProfileCreationDialogBase">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -10,157 +10,182 @@
     <height>750</height>
    </rect>
   </property>
-  <property name="windowTitle">
-   <string>Create Profile Chart</string>
-  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <property name="spacing">
     <number>6</number>
    </property>
      <item>
-      <widget class="QGroupBox" name="groupBox_profile_name">
-       <property name="title">
-        <string>Profile Name</string>
-       </property>
-       <layout class="QHBoxLayout" name="horizontalLayout_profile_name">
-        <item>
-         <widget class="QLineEdit" name="lineEdit_profile_name">
-          <property name="placeholderText">
-           <string>Enter a descriptive profile name (e.g., Airport RWY)</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
+      <layout class="QVBoxLayout" name="vl_section_profile_name">
+       <property name="spacing"><number>3</number></property>
+       <item>
+        <widget class="QLabel" name="labelSectionProfileName">
+         <property name="text"><string>Profile Name</string></property>
+         <property name="styleSheet">
+          <string notr="true">font-weight: bold; color: #444; border-bottom: 1px solid #cccccc; padding-bottom: 2px; margin-top: 6px;</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="lineEdit_profile_name">
+         <property name="placeholderText">
+          <string>Enter a descriptive profile name (e.g., Airport RWY)</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
    <item>
-    <widget class="QGroupBox" name="groupBox_reference">
-     <property name="title">
-      <string>Origin Point (Where to draw profile)</string>
-     </property>
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QLineEdit" name="lineEdit_reference">
-        <property name="placeholderText">
-         <string>Click map to select origin point for drawing</string>
-        </property>
-        <property name="readOnly">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="btn_select_point">
-        <property name="text">
-         <string>Select from Map</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+    <layout class="QVBoxLayout" name="vl_section_reference">
+     <property name="spacing"><number>3</number></property>
+     <item>
+      <widget class="QLabel" name="labelSectionReference">
+       <property name="text"><string>Origin Point (Where to draw profile)</string></property>
+       <property name="styleSheet">
+        <string notr="true">font-weight: bold; color: #444; border-bottom: 1px solid #cccccc; padding-bottom: 2px; margin-top: 6px;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QLineEdit" name="lineEdit_reference">
+         <property name="placeholderText">
+          <string>Click map to select origin point for drawing</string>
+         </property>
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btn_select_point">
+         <property name="text">
+          <string>Select from Map</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
    </item>
    <item>
-    <widget class="QGroupBox" name="groupBox_runway">
-     <property name="title">
-      <string>Runway Parameters</string>
-     </property>
-     <layout class="QGridLayout" name="gridLayout">
-      <property name="verticalSpacing">
-       <number>4</number>
-      </property>
-      <item row="0" column="0">
-       <widget class="QLabel" name="label_direction">
-        <property name="text">
-         <string>Runway Direction:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QLineEdit" name="lineEdit_direction">
-        <property name="placeholderText">
-         <string>e.g., 09/27</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="0">
-       <widget class="QLabel" name="label_length">
-        <property name="text">
-         <string>Runway Length (m):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QLineEdit" name="lineEdit_length">
-        <property name="placeholderText">
-         <string>3000</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label_thr_elev">
-        <property name="text">
-         <string>THR Elevation (ft):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QLineEdit" name="lineEdit_thr_elev">
-        <property name="placeholderText">
-         <string>500</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_tch_rdh">
-        <property name="text">
-         <string>TCH/RDH (ft):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="1">
-       <widget class="QLineEdit" name="lineEdit_tch_rdh">
-        <property name="placeholderText">
-         <string>50</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+    <layout class="QVBoxLayout" name="vl_section_runway">
+     <property name="spacing"><number>3</number></property>
+     <item>
+      <widget class="QLabel" name="labelSectionRunway">
+       <property name="text"><string>Runway Parameters</string></property>
+       <property name="styleSheet">
+        <string notr="true">font-weight: bold; color: #444; border-bottom: 1px solid #cccccc; padding-bottom: 2px; margin-top: 6px;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QGridLayout" name="gridLayout">
+       <property name="verticalSpacing">
+        <number>4</number>
+       </property>
+       <item row="0" column="0">
+        <widget class="QLabel" name="label_direction">
+         <property name="text">
+          <string>Runway Direction:</string>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="1">
+        <widget class="QLineEdit" name="lineEdit_direction">
+         <property name="placeholderText">
+          <string>e.g., 09/27</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="label_length">
+         <property name="text">
+          <string>Runway Length (m):</string>
+         </property>
+        </widget>
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="lineEdit_length">
+         <property name="placeholderText">
+          <string>3000</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="label_thr_elev">
+         <property name="text">
+          <string>THR Elevation (ft):</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
+        <widget class="QLineEdit" name="lineEdit_thr_elev">
+         <property name="placeholderText">
+          <string>500</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="0">
+        <widget class="QLabel" name="label_tch_rdh">
+         <property name="text">
+          <string>TCH/RDH (ft):</string>
+         </property>
+        </widget>
+       </item>
+       <item row="3" column="1">
+        <widget class="QLineEdit" name="lineEdit_tch_rdh">
+         <property name="placeholderText">
+          <string>50</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
    </item>
    <item>
-    <widget class="QGroupBox" name="groupBox_style">
-     <property name="title">
-      <string>Axis</string>
-     </property>
-     <layout class="QGridLayout" name="gridLayout_style">
-      <property name="verticalSpacing">
-       <number>4</number>
-      </property>
-      <item row="0" column="0">
+    <layout class="QVBoxLayout" name="vl_section_style">
+     <property name="spacing"><number>3</number></property>
+     <item>
+      <widget class="QLabel" name="labelSectionAxis">
+       <property name="text"><string>Axis</string></property>
+       <property name="styleSheet">
+        <string notr="true">font-weight: bold; color: #444; border-bottom: 1px solid #cccccc; padding-bottom: 2px; margin-top: 6px;</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <layout class="QGridLayout" name="gridLayout_style">
+       <property name="verticalSpacing">
+        <number>4</number>
+       </property>
+       <item row="0" column="0">
         <widget class="QLabel" name="label_axis_max_nm">
-          <property name="text">
-            <string>Axis max (NM):</string>
-          </property>
+         <property name="text">
+          <string>Axis max (NM):</string>
+         </property>
         </widget>
-      </item>
-      <item row="0" column="1">
+       </item>
+       <item row="0" column="1">
         <widget class="QDoubleSpinBox" name="spinBox_axis_max_nm">
-          <property name="minimum">
-            <double>1.000000000000000</double>
-          </property>
-          <property name="maximum">
-            <double>100.000000000000000</double>
-          </property>
-          <property name="singleStep">
-            <double>0.500000000000000</double>
-          </property>
-          <property name="value">
-            <double>12.000000000000000</double>
-          </property>
+         <property name="minimum">
+          <double>1.000000000000000</double>
+         </property>
+         <property name="maximum">
+          <double>100.000000000000000</double>
+         </property>
+         <property name="singleStep">
+          <double>0.500000000000000</double>
+         </property>
+         <property name="value">
+          <double>12.000000000000000</double>
+         </property>
         </widget>
-      </item>
-     </layout>
-    </widget>
+       </item>
+      </layout>
+     </item>
+    </layout>
    </item>
      
    <item>
@@ -272,54 +297,6 @@
       </item>
      </layout>
     </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_buttons">
-     <item>
-      <widget class="QPushButton" name="btn_load_config">
-       <property name="text">
-        <string>Load Config</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btn_save_config">
-       <property name="text">
-        <string>Save Config</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer_2">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btn_create">
-       <property name="text">
-        <string>Create Profile</string>
-       </property>
-       <property name="default">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="btn_cancel">
-       <property name="text">
-        <string>Cancel</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
    </item>
   </layout>
  </widget>

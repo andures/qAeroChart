@@ -22,13 +22,14 @@
 """
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction, QMenu
+from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 
 # Initialize Qt resources from file resources.py
 # from .resources import *
 
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
+from .vertical_scale_dialog import VerticalScaleDockWidget
 import os.path
 
 
@@ -75,15 +76,27 @@ class QAeroChart:
         
         # Map tool manager (will be initialized in initGui)
         self.tool_manager = None
-        
+
         # Layer manager (will be initialized in initGui)
         self.layer_manager = None
+        # Layout toolbar action
+        self.distance_table_action = None
+        self._layout_toolbar_hooked = False
+
+        # Profile controller (will be initialized in initGui)
+        self._profile_manager = None
+        self._controller = None
 
         # Dedicated toolbar for qAeroChart tools
         self.tools_toolbar = None
         self.generate_profile_action = None
+        self.vertical_scale_action = None
+        self.vertical_scale_dock = None
         # Top-level menu
         self.top_menu = None
+        # Vertical scale dock (Issue #57 standalone)
+        self.vertical_scale_dock = None
+        self.vertical_scale_action = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -198,6 +211,14 @@ class QAeroChart:
         self.generate_profile_action.triggered.connect(self.run)
         self.tools_toolbar.addAction(self.generate_profile_action)
 
+        # Vertical Scale action (Issue #57)
+        vs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_vertical_scale.svg')
+        self.vertical_scale_action = QAction(QIcon(vs_icon_path), self.tr('Vertical Scale'), self.iface.mainWindow())
+        self.vertical_scale_action.setObjectName('qAeroChartVerticalScaleAction')
+        self.vertical_scale_action.setStatusTip(self.tr('Create vertical scale (meters/feet)'))
+        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
+        self.tools_toolbar.addAction(self.vertical_scale_action)
+
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
         try:
             menu_bar = self.iface.mainWindow().menuBar()
@@ -205,6 +226,7 @@ class QAeroChart:
             self.top_menu.setObjectName('qAeroChartMenu')
             # Add our primary action
             self.top_menu.addAction(self.generate_profile_action)
+            self.top_menu.addAction(self.vertical_scale_action)
 
             # Try to position it right after qPANSOPY
             inserted = False
@@ -226,6 +248,23 @@ class QAeroChart:
                 menu_bar.addMenu(self.top_menu)
         except Exception as e:
             print(f"PLUGIN qAeroChart WARNING: Could not create top-level menu: {e}")
+
+        # Layout toolbar action: add distance/altitude table into print layout
+        self.distance_table_action = QAction(QIcon(icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
+        self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
+        self.distance_table_action.setStatusTip(self.tr('Insert a distance/altitude table into the active layout'))
+        self.distance_table_action.triggered.connect(self._open_distance_table_builder)
+        # Also hook into layout-designer openings to force-add the action to their toolbars
+        try:
+            self.iface.layoutDesignerOpened.connect(self._on_layout_designer_opened)
+            self._layout_toolbar_hooked = True
+        except Exception as e:
+            print(f"PLUGIN qAeroChart WARNING: Could not hook layoutDesignerOpened: {e}")
+        try:
+            if self.top_menu:
+                self.top_menu.addAction(self.distance_table_action)
+        except Exception:
+            pass
         
         # Initialize map tool manager
         from .tools import ProfilePointToolManager
@@ -233,19 +272,56 @@ class QAeroChart:
             self.iface.mapCanvas(),
             self.iface
         )
-        print("PLUGIN qAeroChart: Tool manager initialized")
-        
-        # Initialize layer manager
-        from .core import LayerManager
+        log("Tool manager initialized")
+
+        # Initialize layer manager and profile controller
+        from .core import LayerManager, ProfileManager, ProfileController
         self.layer_manager = LayerManager(self.iface)
-        print("PLUGIN qAeroChart: Layer manager initialized")
+        self._profile_manager = ProfileManager()
+        self._controller = ProfileController(self._profile_manager, self.layer_manager)
+        log("Layer manager and profile controller initialized")
+
+        # Vertical scale toolbar action (Issue #57)
+        vs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_vertical_scale.svg')
+        self.vertical_scale_action = QAction(
+            QIcon(vs_icon_path),
+            self.tr('Vertical Scale'),
+            self.iface.mainWindow(),
+        )
+        self.vertical_scale_action.setObjectName('qAeroChartVerticalScaleAction')
+        self.vertical_scale_action.setStatusTip(
+            self.tr('Create a vertical scale bar (metres / feet)')
+        )
+        self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
+        self.tools_toolbar.addAction(self.vertical_scale_action)
+        if self.top_menu:
+            self.top_menu.addAction(self.vertical_scale_action)
+
+    def open_vertical_scale_dock(self):
+        try:
+            if not self.vertical_scale_dock:
+                self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            else:
+                # Always start from the menu page to mimic profile flow
+                try:
+                    self.vertical_scale_dock.show_menu()
+                except Exception:
+                    pass
+            self.vertical_scale_dock.show()
+            self.vertical_scale_dock.raise_()
+        except Exception as e:
+            try:
+                self.iface.messageBar().pushCritical('qAeroChart', f'Could not open Vertical Scale dock: {e}')
+            except Exception:
+                print(f"PLUGIN qAeroChart ERROR: Could not open Vertical Scale dock: {e}")
 
     # --------------------------------------------------------------------------
 
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
 
-        print("PLUGIN qAeroChart: Cleaning up...")
+        log("Cleaning up...")
 
         # disconnects
         self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
@@ -261,7 +337,7 @@ class QAeroChart:
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
-        print("PLUGIN qAeroChart: Unloading...")
+        log("Unloading...")
 
         for action in self.actions:
             self.iface.removePluginVectorMenu(
@@ -289,17 +365,143 @@ class QAeroChart:
             except Exception:
                 pass
             self.top_menu = None
-        
+
+        # Close vertical scale dock
+        if self.vertical_scale_dock:
+            try:
+                self.iface.removeDockWidget(self.vertical_scale_dock)
+                self.vertical_scale_dock.deleteLater()
+            except Exception:
+                pass
+            self.vertical_scale_dock = None
+            self.vertical_scale_action = None
+
         # Clean up tool manager
         if self.tool_manager:
             self.tool_manager.cleanup()
             self.tool_manager = None
         
+        # Clean up controller and managers
+        self._controller = None
+        self._profile_manager = None
+
         # Clean up layer manager (optional - layers remain in project)
         if self.layer_manager:
             # Uncomment to remove layers on plugin unload:
             # self.layer_manager.remove_all_layers()
             self.layer_manager = None
+
+        # Remove layout toolbar action
+        if self.distance_table_action:
+            try:
+                self.iface.removeLayoutDesignerToolBarIcon(self.distance_table_action)
+            except Exception:
+                pass
+            self.distance_table_action = None
+        if self._layout_toolbar_hooked:
+            try:
+                self.iface.layoutDesignerOpened.disconnect(self._on_layout_designer_opened)
+            except Exception:
+                pass
+            self._layout_toolbar_hooked = False
+
+    # --------------------------------------------------------------------------
+
+    def _active_layout_name(self):
+        """Best-effort retrieval of the active layout name in the layout designer."""
+
+        try:
+            designer = self.iface.activeLayoutDesignerInterface()
+            if designer and hasattr(designer, "layout") and designer.layout():
+                return designer.layout().name()
+        except Exception:
+            pass
+        try:
+            designer = self.iface.activeLayoutDesigner()
+            if designer and hasattr(designer, "layout") and designer.layout():
+                return designer.layout().name()
+        except Exception:
+            pass
+        return None
+
+    def _open_distance_table_builder(self):
+        """Launch the distance/altitude table builder dialog and insert the table."""
+
+        try:
+            from .scripts import table_distance_altitude
+        except Exception as exc:
+            print(f"PLUGIN qAeroChart ERROR: Cannot import table builder: {exc}")
+            return
+
+        default_layout = self._active_layout_name()
+        parent_window = None
+        try:
+            designer = self.iface.activeLayoutDesignerInterface()
+            if designer:
+                parent_window = designer.window()
+                self._attach_action_to_designer(designer)
+        except Exception:
+            parent_window = None
+        if parent_window is None:
+            try:
+                designer = self.iface.activeLayoutDesigner()
+                if designer:
+                    parent_window = designer
+                    self._attach_action_to_designer(designer)
+            except Exception:
+                parent_window = None
+
+        try:
+            table_distance_altitude.run(self.iface, default_layout_name=default_layout, parent_window=parent_window)
+        except TypeError:
+            # Fallback for environments that still have the older signature
+            table_distance_altitude.run(self.iface, default_layout_name=default_layout)
+
+    def _on_layout_designer_opened(self, designer_iface):
+        """Ensure our action appears in the layout designer toolbar when a composition opens."""
+
+        try:
+            self._attach_action_to_designer(designer_iface)
+        except Exception as exc:
+            print(f"PLUGIN qAeroChart WARNING: Could not attach action to layout designer: {exc}")
+
+    def _attach_action_to_designer(self, designer_iface):
+        if not self.distance_table_action or not designer_iface:
+            return
+
+        # Preferred: use designer interface API (QGIS 3.x): add to tools toolbar
+        try:
+            add_method = getattr(designer_iface, 'addActionToToolbar', None)
+            if callable(add_method):
+                add_method(self.distance_table_action, 'mLayoutDesignerToolsToolbar')
+                return
+        except Exception:
+            pass
+
+        # Fallback: scan toolbars in the designer window
+        target_names = {
+            'mLayoutDesignerToolsToolbar',
+            'mLayoutDesignerAddItemsToolbar',
+            'mLayoutDesignerToolbar'
+        }
+
+        window = getattr(designer_iface, 'window', None)
+        if callable(window):
+            window = window()
+        if not window:
+            return
+
+        toolbars = window.findChildren(QToolBar)
+        chosen = None
+        for bar in toolbars:
+            if bar.objectName() in target_names:
+                chosen = bar
+                break
+        if chosen is None and toolbars:
+            chosen = toolbars[0]
+
+        if chosen and self.distance_table_action not in chosen.actions():
+            chosen.addAction(self.distance_table_action)
 
     # --------------------------------------------------------------------------
 
@@ -309,18 +511,19 @@ class QAeroChart:
         if not self.pluginIsActive:
             self.pluginIsActive = True
 
-            print("PLUGIN qAeroChart: Starting...")
+            log("Starting...")
 
             # dockwidget may not exist if:
             #    first run of plugin
             #    removed on close (see self.onClosePlugin method)
             if self.dockwidget is None:
                 # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = QAeroChartDockWidget()
+                self.dockwidget = QAeroChartDockWidget(
+                    iface=self.iface, controller=self._controller
+                )
 
-            # Pass managers to dockwidget
+            # Pass tool manager (draw tool lives outside the controller)
             self.dockwidget.tool_manager = self.tool_manager
-            self.dockwidget.layer_manager = self.layer_manager
 
             # connect to provide cleanup on closing of dockwidget
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)
@@ -329,3 +532,24 @@ class QAeroChart:
             # TODO: fix to allow choice of dock location
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+
+    def open_vertical_scale_dock(self) -> None:
+        """Open (or raise) the standalone Vertical Scale dock widget."""
+        try:
+            from .core.vertical_scale_manager import VerticalScaleManager
+            from .core.vertical_scale_controller import VerticalScaleController
+            if self.vertical_scale_dock is None:
+                vs_manager = VerticalScaleManager()
+                vs_controller = VerticalScaleController(vs_manager, self.layer_manager)
+                self.vertical_scale_dock = VerticalScaleDockWidget(
+                    controller=vs_controller,
+                    iface=self.iface,
+                    parent=self.iface.mainWindow(),
+                )
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            else:
+                self.vertical_scale_dock.show_menu()
+            self.vertical_scale_dock.show()
+            self.vertical_scale_dock.raise_()
+        except Exception as e:
+            log(f"Could not open Vertical Scale dock: {e}", "ERROR")

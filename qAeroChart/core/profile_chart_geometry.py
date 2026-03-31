@@ -6,8 +6,11 @@ This module handles all geometric calculations for creating profile charts
 drawn on the map following the runway heading.
 """
 
+from __future__ import annotations
+
 from qgis.core import QgsPointXY
-import math
+
+from ..utils.logger import log
 
 
 class ProfileChartGeometry:
@@ -46,12 +49,16 @@ class ProfileChartGeometry:
         self.horizontal_scale = 1.0
         self.vertical_exaggeration = max(1.0, float(vertical_exaggeration or 10.0))
         # Direction: +1 means left→right (increasing X to the right), -1 means right→left
-        self.dir_sign = 1 if int(horizontal_direction or 1) >= 0 else -1
+        _hd = int(horizontal_direction) if horizontal_direction is not None else 1
+        self.dir_sign = -1 if _hd < 0 else 1
         
-        print(f"PLUGIN qAeroChart: ProfileChartGeometry initialized at origin "
-              f"X={origin_point.x():.2f}, Y={origin_point.y():.2f} (Cartesian mode, VE={self.vertical_exaggeration}x)")
+        log(
+            f"ProfileChartGeometry initialized at origin "
+            f"X={origin_point.x():.2f}, Y={origin_point.y():.2f} "
+            f"(Cartesian mode, VE={self.vertical_exaggeration}x)"
+        )
     
-    def nm_to_meters(self, nautical_miles):
+    def nm_to_meters(self, nautical_miles: float) -> float:
         """
         Convert nautical miles to meters.
         
@@ -63,7 +70,7 @@ class ProfileChartGeometry:
         """
         return nautical_miles * self.NM_TO_METERS
     
-    def calculate_profile_point(self, distance_nm, elevation_ft):
+    def calculate_profile_point(self, distance_nm: float, elevation_ft: float) -> QgsPointXY:
         """
         Calculate cartesian coordinates for a profile point.
         
@@ -86,13 +93,17 @@ class ProfileChartGeometry:
             self.origin.y() + scaled_elevation_m
         )
         
-        print(f"PLUGIN qAeroChart: Point calc - Distance: {distance_nm:.2f}NM ({distance_m:.2f}m→{scaled_distance_m:.2f}m), "
-              f"Elevation: {elevation_ft:.2f}ft ({elevation_m:.2f}m→{scaled_elevation_m:.2f}m) "
-              f"→ ({result_point.x():.2f}, {result_point.y():.2f})")
+        log(
+            f"Point calc - Distance: {distance_nm:.2f}NM "
+            f"({distance_m:.2f}m→{scaled_distance_m:.2f}m), "
+            f"Elevation: {elevation_ft:.2f}ft "
+            f"({elevation_m:.2f}m→{scaled_elevation_m:.2f}m) "
+            f"→ ({result_point.x():.2f}, {result_point.y():.2f})"
+        )
         
         return result_point
     
-    def create_runway_line(self, length_m, _tch_m_unused=0.0):
+    def create_runway_line(self, length_m: float, _tch_m_unused: float = 0.0) -> list[QgsPointXY]:
         """
         Create the runway line geometry in cartesian coordinates.
 
@@ -118,13 +129,14 @@ class ProfileChartGeometry:
         start = QgsPointXY(self.origin.x() - scaled_length, y)
         end = QgsPointXY(self.origin.x(), y)
 
-        print(
-            f"PLUGIN qAeroChart: Runway line created (left of origin) - Length: {length_m}m→{scaled_length:.2f}m, Y=baseline"
+        log(
+            f"Runway line created (left of origin) - "
+            f"Length: {length_m}m→{scaled_length:.2f}m, Y=baseline"
         )
 
         return [start, end]
     
-    def create_profile_line(self, profile_points):
+    def create_profile_line(self, profile_points: list[dict]) -> list[QgsPointXY]:
         """
         Create the main profile line connecting profile points.
         
@@ -148,15 +160,17 @@ class ProfileChartGeometry:
                 points.append(pt)
                 
             except (ValueError, TypeError) as e:
-                print(f"PLUGIN qAeroChart WARNING: Could not process point "
-                      f"{point_data.get('point_name', 'unknown')}: {e}")
+                log(
+                    f"Could not process point {point_data.get('point_name', 'unknown')}: {e}",
+                    level="WARNING",
+                )
                 continue
         
-        print(f"PLUGIN qAeroChart: Profile line created with {len(points)} points")
+        log(f"Profile line created with {len(points)} points")
         
         return points
     
-    def create_distance_markers(self, max_distance_nm, marker_height_m=200):
+    def create_distance_markers(self, max_distance_nm: float, marker_height_m: float = 200) -> list[dict]:
         """
         Create distance marker points in cartesian coordinates.
         
@@ -173,7 +187,7 @@ class ProfileChartGeometry:
         
         scaled_marker_height = marker_height_m * self.vertical_exaggeration
         
-    # Create marker for each nautical mile
+        # Create marker for each nautical mile
         for i in range(int(max_distance_nm) + 1):
             distance_m = self.nm_to_meters(i)
             scaled_distance = distance_m * self.horizontal_scale
@@ -189,12 +203,14 @@ class ProfileChartGeometry:
                 'geometry': [bottom, top]
             })
         
-        print(f"PLUGIN qAeroChart: Created {len(markers)} distance markers "
-              f"(height: {marker_height_m}m→{scaled_marker_height:.2f}m)")
+        log(
+            f"Created {len(markers)} distance markers "
+            f"(height: {marker_height_m}m→{scaled_marker_height:.2f}m)"
+        )
         
         return markers
     
-    def create_vertical_reference_line(self, distance_nm, height_m):
+    def create_vertical_reference_line(self, distance_nm: float, height_m: float) -> list[QgsPointXY]:
         """
         Create a vertical reference line at a specific distance.
         
@@ -213,7 +229,7 @@ class ProfileChartGeometry:
         
         return [bottom, top]
     
-    def create_oca_box(self, start_distance_nm, end_distance_nm, height_ft):
+    def create_oca_box(self, start_distance_nm: float, end_distance_nm: float, height_ft: float) -> list[QgsPointXY]:
         """
         Create OCA/H (Obstacle Clearance Altitude/Height) box as a polygon.
         
@@ -246,9 +262,12 @@ class ProfileChartGeometry:
         # Close the polygon by repeating first point
         polygon = [bottom_left, bottom_right, top_right, top_left, bottom_left]
         
-        print(f"PLUGIN qAeroChart: OCA polygon created - "
-              f"Distance: {start_distance_nm}-{end_distance_nm} NM ({scaled_start:.2f}-{scaled_end:.2f}m), "
-              f"Height: {height_ft} ft ({scaled_height:.2f}m)")
+        log(
+            f"OCA polygon created - "
+            f"Distance: {start_distance_nm}-{end_distance_nm} NM "
+            f"({scaled_start:.2f}-{scaled_end:.2f}m), "
+            f"Height: {height_ft} ft ({scaled_height:.2f}m)"
+        )
         
         return polygon
     

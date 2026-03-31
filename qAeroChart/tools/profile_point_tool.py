@@ -8,8 +8,10 @@ feedback using a rubber band and emits signals to communicate with the
 ProfileCreationDialog.
 """
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal, QPointF, QSizeF
+from qgis.PyQt.QtCore import pyqtSignal, QPointF, QSizeF
 from qgis.PyQt.QtGui import QColor, QTextDocument, QFont
+from ..utils.logger import log
+from ..utils.qt_compat import Qt
 from qgis.core import QgsPointXY, QgsWkbTypes, QgsCoordinateTransform, QgsProject, QgsGeometry, QgsTextAnnotation
 from qgis.gui import QgsMapTool, QgsRubberBand, QgsMapCanvasAnnotationItem
 
@@ -47,13 +49,12 @@ class ProfilePointTool(QgsMapTool):
         self.preview_grid_band = None
         self._preview_generator = None  # Callable taking QgsPointXY -> dict with polylines
         self.preview_label_items = []
-        self.cursor = Qt.CrossCursor
         self._last_hover_point = None
         
         # Initialize rubber band for visual feedback
         self._init_rubber_band()
         
-        print("PLUGIN qAeroChart: ProfilePointTool initialized")
+        log("ProfilePointTool initialized")
     
     def _init_rubber_band(self):
         """Initialize the rubber band for visual feedback."""
@@ -118,7 +119,7 @@ class ProfilePointTool(QgsMapTool):
         # Get the clicked point in map coordinates
         point = self.toMapCoordinates(event.pos())
         
-        print(f"PLUGIN qAeroChart: Origin point selected at X={point.x():.2f}, Y={point.y():.2f}")
+        log(f"Origin point selected at X={point.x():.2f}, Y={point.y():.2f}")
         
         # Show visual feedback
         self._show_point_feedback(point)
@@ -224,11 +225,9 @@ class ProfilePointTool(QgsMapTool):
                         item = QgsMapCanvasAnnotationItem(ann, self.canvas)
                         self.preview_label_items.append(item)
                     except Exception as e:
-                        # Skip label on error, keep preview responsive
-                        print(f"PLUGIN qAeroChart WARNING: label creation failed: {e}")
+                        log(f"label creation failed: {e}", "WARNING")
         except Exception as e:
-            # Fail silently to avoid interrupting user interaction
-            print(f"PLUGIN qAeroChart WARNING: preview failed: {e}")
+            log(f"preview failed: {e}", "WARNING")
 
     def get_last_hover_point(self):
         """Return the last hovered map point (QgsPointXY) or None."""
@@ -251,14 +250,14 @@ class ProfilePointTool(QgsMapTool):
             # Show the rubber band
             self.rubber_band.show()
             
-            print("PLUGIN qAeroChart: Visual feedback displayed at point")
+            log("Visual feedback displayed at point")
     
     def clear_feedback(self):
         """Clear the visual feedback rubber band."""
         if self.rubber_band:
             self.rubber_band.reset(QgsWkbTypes.PointGeometry)
             self.rubber_band.hide()
-            print("PLUGIN qAeroChart: Visual feedback cleared")
+            log("Visual feedback cleared")
         if self.preview_band:
             self.preview_band.reset(QgsWkbTypes.LineGeometry)
             self.preview_band.hide()
@@ -281,12 +280,12 @@ class ProfilePointTool(QgsMapTool):
         super(ProfilePointTool, self).activate()
         
         # Set cursor
-        self.canvas.setCursor(self.cursor)
+        self.canvas.setCursor(Qt.CrossCursor)
         
         # Clear any previous feedback
         self.clear_feedback()
         
-        print("PLUGIN qAeroChart: ProfilePointTool activated")
+        log("ProfilePointTool activated")
     
     def deactivate(self):
         """
@@ -298,10 +297,9 @@ class ProfilePointTool(QgsMapTool):
         # Clear rubber band
         self.clear_feedback()
         
-        # Emit deactivated signal
         self.deactivated.emit()
         
-        print("PLUGIN qAeroChart: ProfilePointTool deactivated")
+        log("ProfilePointTool deactivated")
     
     def isZoomTool(self):
         """
@@ -383,7 +381,7 @@ class ProfilePointToolManager:
         self.tool = None
         self.previous_tool = None
         
-        print("PLUGIN qAeroChart: ProfilePointToolManager initialized")
+        log("ProfilePointToolManager initialized")
     
     def create_tool(self):
         """
@@ -394,7 +392,7 @@ class ProfilePointToolManager:
         """
         if self.tool is None:
             self.tool = ProfilePointTool(self.canvas)
-            print("PLUGIN qAeroChart: ProfilePointTool instance created")
+            log("ProfilePointTool instance created")
         
         return self.tool
     
@@ -413,7 +411,7 @@ class ProfilePointToolManager:
         # Set as active tool
         self.canvas.setMapTool(self.tool)
         
-        print("PLUGIN qAeroChart: ProfilePointTool activated via manager")
+        log("ProfilePointTool activated via manager")
     
     def deactivate_tool(self):
         """
@@ -426,11 +424,10 @@ class ProfilePointToolManager:
         # Restore previous tool
         if self.previous_tool:
             self.canvas.setMapTool(self.previous_tool)
-            print("PLUGIN qAeroChart: Previous tool restored")
+            log("Previous tool restored")
         else:
-            # If no previous tool, unset current tool
             self.canvas.unsetMapTool(self.tool)
-            print("PLUGIN qAeroChart: Map tool unset")
+            log("Map tool unset")
         
         self.previous_tool = None
     
@@ -443,7 +440,7 @@ class ProfilePointToolManager:
             self.deactivate_tool()
             self.tool = None
         
-        print("PLUGIN qAeroChart: ProfilePointToolManager cleaned up")
+        log("ProfilePointToolManager cleaned up")
     
     def get_tool(self):
         """

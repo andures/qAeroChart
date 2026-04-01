@@ -1,4 +1,11 @@
-from PyQt5 import QtCore, QtWidgets
+try:
+    from qgis.PyQt import QtCore, QtWidgets
+except ImportError:
+    try:
+        from PyQt6 import QtCore, QtWidgets  # type: ignore
+    except ImportError:
+        from PyQt5 import QtCore, QtWidgets  # type: ignore
+from ..utils.qt_compat import Qt, QAbstractItemView
 
 
 class DistanceAltitudeTableDialog(QtWidgets.QDialog):
@@ -9,7 +16,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.iface = iface
         self.setWindowTitle("Distance/Altitude Table")
         # Non-modal so the layout window does not minimize
-        self.setWindowModality(QtCore.Qt.NonModal)
+        self.setWindowModality(Qt.NonModal)
         self.setModal(False)
         self.resize(720, 520)
         self._build_ui()
@@ -24,7 +31,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         layout.setSpacing(8)
 
         title = QtWidgets.QLabel("Table Builder")
-        title.setAlignment(QtCore.Qt.AlignHCenter)
+        title.setAlignment(Qt.AlignHCenter)
         title.setStyleSheet("font-weight: bold; font-size: 11pt;")
         layout.addWidget(title)
 
@@ -83,7 +90,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
         # Preview table
         self.table = QtWidgets.QTableWidget()
-        self.table.setEditTriggers(QtWidgets.QAbstractItemView.AllEditTriggers)
+        self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)

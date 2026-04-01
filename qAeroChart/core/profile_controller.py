@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 ProfileController - MVC controller mediating between ProfileManager/LayerManager
 and the DockWidget view.
@@ -9,12 +9,12 @@ business-logic paths directly.
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal
-from qgis.core import Qgis
 
 from .profile_manager import ProfileManager
 from .layer_manager import LayerManager
 from .layout_manager import LayoutManager
 from ..utils.logger import log
+from ..utils.qt_compat import MsgLevel
 
 
 class ProfileController(QObject):
@@ -26,7 +26,7 @@ class ProfileController(QObject):
     - Never call ProfileManager or LayerManager directly.
     """
 
-    # (title, text, Qgis.MessageLevel int) — emitted after every user-visible event
+    # (title, text, Qgis.MessageLevel int) â€” emitted after every user-visible event
     message: pyqtSignal = pyqtSignal(str, str, int)
     # Emitted whenever the profile list has changed (add / delete / rename)
     profiles_changed: pyqtSignal = pyqtSignal()
@@ -43,6 +43,14 @@ class ProfileController(QObject):
         self._layout_manager = layout_manager
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _emit_msg(self, title: str, text: str, level) -> None:
+        """Emit ``message`` signal with int-casted level (PyQt6 strict enum safety)."""
+        self.message.emit(title, text, int(level))
+
+    # ------------------------------------------------------------------
     # Read-only queries (thin delegation to ProfileManager)
     # ------------------------------------------------------------------
 
@@ -56,7 +64,7 @@ class ProfileController(QObject):
         return self._profile_manager.get_profile_display_name(profile)
 
     # ------------------------------------------------------------------
-    # Write operations — emit signals instead of touching the UI
+    # Write operations â€” emit signals instead of touching the UI
     # ------------------------------------------------------------------
 
     def save_or_update_profile(
@@ -70,6 +78,7 @@ class ProfileController(QObject):
         Returns True on success.
         """
         try:
+            print(f"[qAeroChart][DIAG] save_or_update_profile called, profile_id={profile_id!r}")
             if profile_id:
                 self._profile_manager.update_profile(profile_id, name, config)
                 success_msg = "Profile has been updated successfully."
@@ -77,22 +86,31 @@ class ProfileController(QObject):
                 self._profile_manager.save_profile(name, config)
                 success_msg = "Profile has been created and saved successfully."
 
+            print(f"[qAeroChart][DIAG] _layer_manager={self._layer_manager!r}")
             if self._layer_manager:
-                self._layer_manager.create_all_layers(config)
-                self._layer_manager.populate_layers_from_config(config)
+                print(f"[qAeroChart][DIAG] Calling create_all_layers...")
+                result = self._layer_manager.create_all_layers(config)
+                print(f"[qAeroChart][DIAG] create_all_layers returned: {list(result.keys()) if isinstance(result, dict) else result!r}")
+                print(f"[qAeroChart][DIAG] Calling populate_layers_from_config...")
+                pop_result = self._layer_manager.populate_layers_from_config(config)
+                print(f"[qAeroChart][DIAG] populate_layers_from_config returned: {pop_result!r}")
                 profile_points = config.get("profile_points", [])
                 runway_dir = config.get("runway", {}).get("direction", "N/A")
                 log(f"Profile saved: dir={runway_dir}, {len(profile_points)} points")
             else:
+                print(f"[qAeroChart][DIAG] WARNING: _layer_manager is None!")
                 log("Layer manager not available; profile saved without drawing", "WARNING")
 
-            self.message.emit("Profile Saved", success_msg, Qgis.Success)
+            self._emit_msg("Profile Saved", success_msg, MsgLevel.Success)
             self.profiles_changed.emit()
             return True
 
         except Exception as e:
+            import traceback
+            print(f"[qAeroChart][DIAG] save_or_update_profile EXCEPTION: {e}")
+            traceback.print_exc()
             log(f"save_or_update_profile failed: {e}", "ERROR")
-            self.message.emit("Profile Error", str(e), Qgis.Critical)
+            self._emit_msg("Profile Error", str(e), MsgLevel.Critical)
             return False
 
     def delete_profiles(self, profile_ids: list[str]) -> int:
@@ -110,7 +128,7 @@ class ProfileController(QObject):
 
         if deleted:
             msg = f"{deleted} profile(s) removed." if deleted > 1 else "Profile has been removed."
-            self.message.emit("Profile Deleted", msg, Qgis.Info)
+            self._emit_msg("Profile Deleted", msg, MsgLevel.Info)
             self.profiles_changed.emit()
             log(f"Deleted {deleted} profile(s)")
 
@@ -123,21 +141,21 @@ class ProfileController(QObject):
         """
         config = self._profile_manager.get_profile(profile_id)
         if not config:
-            self.message.emit(
+            self._emit_msg(
                 "Error",
                 "Could not load profile configuration to rename.",
-                Qgis.Critical,
+                MsgLevel.Critical,
             )
             return False
 
         try:
             self._profile_manager.update_profile(profile_id, new_name, config)
-            self.message.emit("Profile Renamed", f"Renamed to '{new_name}'.", Qgis.Info)
+            self._emit_msg("Profile Renamed", f"Renamed to '{new_name}'.", MsgLevel.Info)
             self.profiles_changed.emit()
             return True
         except (KeyError, ValueError) as e:
             log(f"rename_profile failed: {e}", "ERROR")
-            self.message.emit("Rename Error", str(e), Qgis.Critical)
+            self._emit_msg("Rename Error", str(e), MsgLevel.Critical)
             return False
 
     def draw_profile(self, profile_id: str) -> bool:
@@ -147,8 +165,8 @@ class ProfileController(QObject):
         """
         config = self._profile_manager.get_profile(profile_id)
         if not config:
-            self.message.emit(
-                "Error", "Could not load profile configuration.", Qgis.Critical
+            self._emit_msg(
+                "Error", "Could not load profile configuration.", MsgLevel.Critical
             )
             return False
 
@@ -159,14 +177,14 @@ class ProfileController(QObject):
         try:
             self._layer_manager.create_all_layers(config)
             self._layer_manager.populate_layers_from_config(config)
-            self.message.emit(
-                "Profile Drawn", "Profile has been drawn on the map.", Qgis.Success
+            self._emit_msg(
+                "Profile Drawn", "Profile has been drawn on the map.", MsgLevel.Success
             )
             log(f"Drew profile {profile_id}")
             return True
         except Exception as e:
             log(f"draw_profile failed: {e}", "ERROR")
-            self.message.emit("Draw Error", str(e), Qgis.Critical)
+            self._emit_msg("Draw Error", str(e), MsgLevel.Critical)
             return False
 
     def generate_vertical_scale(self, profile_id: str) -> bool:
@@ -176,7 +194,7 @@ class ProfileController(QObject):
         """
         config = self._profile_manager.get_profile(profile_id)
         if not config:
-            self.message.emit("Error", "Profile not found.", Qgis.Critical)
+            self._emit_msg("Error", "Profile not found.", MsgLevel.Critical)
             return False
 
         if not self._layer_manager:
@@ -185,14 +203,14 @@ class ProfileController(QObject):
 
         try:
             self._layer_manager.populate_vertical_scale_layer(config)
-            self.message.emit(
-                "Vertical Scale", "Scale bar drawn on the map.", Qgis.Success
+            self._emit_msg(
+                "Vertical Scale", "Scale bar drawn on the map.", MsgLevel.Success
             )
             log(f"Generated vertical scale for profile {profile_id}")
             return True
         except (ValueError, AttributeError) as e:
             log(f"generate_vertical_scale failed: {e}", "ERROR")
-            self.message.emit("Vertical Scale Error", str(e), Qgis.Critical)
+            self._emit_msg("Vertical Scale Error", str(e), MsgLevel.Critical)
             return False
 
     def generate_distance_altitude_table(self, profile_id: str) -> bool:
@@ -202,7 +220,7 @@ class ProfileController(QObject):
         """
         config = self._profile_manager.get_profile(profile_id)
         if not config:
-            self.message.emit("Error", "Profile not found.", Qgis.Critical)
+            self._emit_msg("Error", "Profile not found.", MsgLevel.Critical)
             return False
 
         if not self._layout_manager:
@@ -211,14 +229,14 @@ class ProfileController(QObject):
 
         try:
             self._layout_manager.populate_distance_altitude_table(config)
-            self.message.emit(
+            self._emit_msg(
                 "Distance/Altitude Table",
                 "Table added to the print layout.",
-                Qgis.Success,
+                MsgLevel.Success,
             )
             log(f"Generated distance/altitude table for profile {profile_id}")
             return True
         except (ValueError, AttributeError) as e:
             log(f"generate_distance_altitude_table failed: {e}", "ERROR")
-            self.message.emit("Table Error", str(e), Qgis.Critical)
+            self._emit_msg("Table Error", str(e), MsgLevel.Critical)
             return False

@@ -8,12 +8,94 @@ feedback using a rubber band and emits signals to communicate with the
 ProfileCreationDialog.
 """
 
-from qgis.PyQt.QtCore import pyqtSignal, QPointF, QSizeF
-from qgis.PyQt.QtGui import QColor, QTextDocument, QFont
+from qgis.PyQt.QtCore import pyqtSignal, QPointF, QSizeF, QRectF
+from qgis.PyQt.QtGui import QColor, QTextDocument, QFont, QPen, QBrush
 from ..utils.logger import log
 from ..utils.qt_compat import Qt
-from qgis.core import QgsPointXY, QgsWkbTypes, QgsCoordinateTransform, QgsProject, QgsGeometry, QgsTextAnnotation
-from qgis.gui import QgsMapTool, QgsRubberBand, QgsMapCanvasAnnotationItem
+from qgis.core import QgsPointXY, QgsCoordinateTransform, QgsProject, QgsGeometry
+from qgis.gui import QgsMapTool, QgsRubberBand, QgsMapCanvasItem
+
+# ---------------------------------------------------------------------------
+# QGIS 3 / 4 compatibility for geometry type enums
+# ---------------------------------------------------------------------------
+try:
+    from qgis.core import Qgis as _Qgis
+    _GEOM_POINT = _Qgis.GeometryType.Point
+    _GEOM_LINE = _Qgis.GeometryType.Line
+except AttributeError:
+    from qgis.core import QgsWkbTypes as _QgsWkbTypes
+    _GEOM_POINT = _QgsWkbTypes.PointGeometry
+    _GEOM_LINE = _QgsWkbTypes.LineGeometry
+
+# ---------------------------------------------------------------------------
+# QGIS 3 / 4 compatibility for QgsRubberBand icon enum
+# ---------------------------------------------------------------------------
+_ICON_CIRCLE = getattr(QgsRubberBand, 'ICON_CIRCLE', None)
+if _ICON_CIRCLE is None:
+    try:
+        _ICON_CIRCLE = QgsRubberBand.IconType.ICON_CIRCLE
+    except AttributeError:
+        _ICON_CIRCLE = 4  # numeric fallback
+
+# ---------------------------------------------------------------------------
+# QGIS 3 / 4 compatibility for annotation API
+# ---------------------------------------------------------------------------
+# Old API (QgsTextAnnotation + QgsMapCanvasAnnotationItem) was removed in QGIS 4.
+# We provide a custom QgsMapCanvasItem subclass that paints labels directly.
+try:
+    from qgis.core import QgsTextAnnotation as _QgsTextAnnotation
+    from qgis.gui import QgsMapCanvasAnnotationItem as _QgsMapCanvasAnnotationItem
+    _LEGACY_ANNOTATIONS = True
+except ImportError:
+    _LEGACY_ANNOTATIONS = False
+
+
+class _PreviewLabelCanvasItem(QgsMapCanvasItem):
+    """Lightweight canvas overlay that paints text labels at map positions.
+
+    Works on both QGIS 3 and QGIS 4 since QgsMapCanvasItem is available in
+    all versions.  Replaces the old QgsTextAnnotation / QgsMapCanvasAnnotationItem
+    approach that was removed in QGIS 4.
+    """
+
+    def __init__(self, canvas, labels: list):
+        """
+        Args:
+            canvas: QgsMapCanvas instance.
+            labels: list of dicts with 'pos' (QgsPointXY) and 'text' (str).
+        """
+        super().__init__(canvas)
+        self._canvas_ref = canvas
+        self._labels = labels
+        self._font = QFont("Arial", 8)
+        self._pen = QPen(QColor(0, 0, 0))
+        self._bg = QBrush(QColor(255, 255, 255, 200))
+        self.updateCanvas()
+
+    def paint(self, painter, option, widget):
+        if not painter:
+            return
+        painter.setFont(self._font)
+        fm = painter.fontMetrics()
+        for entry in self._labels:
+            pos = entry.get('pos')
+            text = str(entry.get('text', ''))
+            if not isinstance(pos, QgsPointXY) or not text:
+                continue
+            pt = self.toCanvasCoordinates(pos)
+            tw = fm.horizontalAdvance(text)
+            th = fm.height()
+            # Draw background rect then text (offset below the axis)
+            x = int(pt.x()) - tw // 2
+            y = int(pt.y()) + 4
+            painter.setBrush(self._bg)
+            painter.setPen(QPen(QColor(0, 0, 0, 60)))
+            painter.drawRect(x - 2, y, tw + 4, th + 2)
+            painter.setPen(self._pen)
+            painter.drawText(x, y + th - 1, text)
+
+    def boundingRect(self):
+        return QRectF(self._canvas_ref.rect())
 
 
 class ProfilePointTool(QgsMapTool):
@@ -59,34 +141,34 @@ class ProfilePointTool(QgsMapTool):
     def _init_rubber_band(self):
         """Initialize the rubber band for visual feedback."""
         # Create rubber band for point visualization
-        self.rubber_band = QgsRubberBand(self.canvas, QgsWkbTypes.PointGeometry)
+        self.rubber_band = QgsRubberBand(self.canvas, _GEOM_POINT)
         
         # Set appearance
         self.rubber_band.setColor(QColor(255, 0, 0, 180))  # Red with transparency
         self.rubber_band.setWidth(3)
-        self.rubber_band.setIcon(QgsRubberBand.ICON_CIRCLE)
+        self.rubber_band.setIcon(_ICON_CIRCLE)
         self.rubber_band.setIconSize(15)
         
         # Create rubber band for profile preview (line)
-        self.preview_band = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
+        self.preview_band = QgsRubberBand(self.canvas, _GEOM_LINE)
         self.preview_band.setColor(QColor(0, 120, 215, 180))  # Blue-ish
         self.preview_band.setWidth(2)
         self.preview_band.hide()
         
         # Create rubber band for tick preview (line)
-        self.preview_ticks_band = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
+        self.preview_ticks_band = QgsRubberBand(self.canvas, _GEOM_LINE)
         self.preview_ticks_band.setColor(QColor(128, 128, 128, 160))  # Gray
         self.preview_ticks_band.setWidth(1)
         self.preview_ticks_band.hide()
 
         # Baseline (horizontal axis) preview
-        self.preview_baseline_band = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
+        self.preview_baseline_band = QgsRubberBand(self.canvas, _GEOM_LINE)
         self.preview_baseline_band.setColor(QColor(0, 0, 0, 220))  # Black
         self.preview_baseline_band.setWidth(3)
         self.preview_baseline_band.hide()
 
         # Grid (full verticals) preview
-        self.preview_grid_band = QgsRubberBand(self.canvas, QgsWkbTypes.LineGeometry)
+        self.preview_grid_band = QgsRubberBand(self.canvas, _GEOM_LINE)
         self.preview_grid_band.setColor(QColor(170, 170, 170, 140))
         self.preview_grid_band.setWidth(1)
         self.preview_grid_band.hide()
@@ -150,7 +232,7 @@ class ProfilePointTool(QgsMapTool):
             # Expecting preview dict with optional keys 'profile_line' (list[QgsPointXY])
             # and 'tick_segments' (list[list[QgsPointXY]] with two points each)
             # Update main profile preview
-            self.preview_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_band.reset(_GEOM_LINE)
             profile_pts = preview.get('profile_line', [])
             if profile_pts:
                 geom = QgsGeometry.fromPolylineXY(profile_pts)
@@ -160,7 +242,7 @@ class ProfilePointTool(QgsMapTool):
                 self.preview_band.hide()
 
             # Update baseline
-            self.preview_baseline_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_baseline_band.reset(_GEOM_LINE)
             baseline_pts = preview.get('baseline', [])
             if baseline_pts:
                 geom = QgsGeometry.fromPolylineXY(baseline_pts)
@@ -170,7 +252,7 @@ class ProfilePointTool(QgsMapTool):
                 self.preview_baseline_band.hide()
             
             # Update ticks preview (as multi-segment)
-            self.preview_ticks_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_ticks_band.reset(_GEOM_LINE)
             tick_segments = preview.get('tick_segments', [])
             if tick_segments:
                 # Aggregate as multiLineString
@@ -185,7 +267,7 @@ class ProfilePointTool(QgsMapTool):
                 self.preview_ticks_band.hide()
 
             # Update grid preview
-            self.preview_grid_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_grid_band.reset(_GEOM_LINE)
             grid_segments = preview.get('grid_segments', [])
             if grid_segments:
                 for seg in grid_segments:
@@ -196,36 +278,13 @@ class ProfilePointTool(QgsMapTool):
             else:
                 self.preview_grid_band.hide()
 
-            # Update tick labels (text annotations)
+            # Update tick labels (canvas-painted labels — works on QGIS 3 and 4)
             self._clear_preview_labels()
             tick_labels = preview.get('tick_labels', [])
             if tick_labels:
-                for entry in tick_labels:
-                    pos = entry.get('pos')
-                    text = str(entry.get('text', ''))
-                    if not isinstance(pos, QgsPointXY) or text == '':
-                        continue
-                    try:
-                        ann = QgsTextAnnotation()
-                        doc = QTextDocument()
-                        doc.setPlainText(text)
-                        font = QFont()
-                        font.setPointSize(8)
-                        doc.setDefaultFont(font)
-                        ann.setDocument(doc)
-                        ann.setMapPosition(pos)
-                        # Ensure annotation uses the canvas destination CRS
-                        try:
-                            ann.setMapPositionCrs(self.canvas.mapSettings().destinationCrs())
-                        except Exception:
-                            pass
-                        # Slight upward offset in pixels to avoid overlapping the axis line
-                        ann.setFrameOffsetFromReferencePoint(QPointF(-6, -14))
-                        ann.setFrameSize(QSizeF(18, 12))
-                        item = QgsMapCanvasAnnotationItem(ann, self.canvas)
-                        self.preview_label_items.append(item)
-                    except Exception as e:
-                        log(f"label creation failed: {e}", "WARNING")
+                label_item = _PreviewLabelCanvasItem(self.canvas, tick_labels)
+                label_item.show()
+                self.preview_label_items.append(label_item)
         except Exception as e:
             log(f"preview failed: {e}", "WARNING")
 
@@ -242,7 +301,7 @@ class ProfilePointTool(QgsMapTool):
         """
         if self.rubber_band:
             # Clear previous rubber band
-            self.rubber_band.reset(QgsWkbTypes.PointGeometry)
+            self.rubber_band.reset(_GEOM_POINT)
             
             # Add the point
             self.rubber_band.addPoint(point)
@@ -255,20 +314,20 @@ class ProfilePointTool(QgsMapTool):
     def clear_feedback(self):
         """Clear the visual feedback rubber band."""
         if self.rubber_band:
-            self.rubber_band.reset(QgsWkbTypes.PointGeometry)
+            self.rubber_band.reset(_GEOM_POINT)
             self.rubber_band.hide()
             log("Visual feedback cleared")
         if self.preview_band:
-            self.preview_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_band.reset(_GEOM_LINE)
             self.preview_band.hide()
         if self.preview_ticks_band:
-            self.preview_ticks_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_ticks_band.reset(_GEOM_LINE)
             self.preview_ticks_band.hide()
         if self.preview_baseline_band:
-            self.preview_baseline_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_baseline_band.reset(_GEOM_LINE)
             self.preview_baseline_band.hide()
         if self.preview_grid_band:
-            self.preview_grid_band.reset(QgsWkbTypes.LineGeometry)
+            self.preview_grid_band.reset(_GEOM_LINE)
             self.preview_grid_band.hide()
         self._clear_preview_labels()
     
@@ -353,8 +412,11 @@ class ProfilePointTool(QgsMapTool):
             return
         for item in self.preview_label_items:
             try:
-                item.setVisible(False)
-                item.deleteLater()
+                item.hide()
+                # QgsMapCanvasItem subclasses need to be removed from the scene
+                scene = self.canvas.scene()
+                if scene and item.scene():
+                    scene.removeItem(item)
             except Exception:
                 pass
         self.preview_label_items = []

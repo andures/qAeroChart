@@ -29,11 +29,11 @@ from qgis.PyQt import QtWidgets, uic
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import QTableWidgetItem, QFileDialog, QShortcut, QInputDialog
 from qgis.PyQt.QtGui import QKeySequence
-from .utils.qt_compat import Qt, QMessageBox, QAbstractItemView
-from qgis.core import Qgis, QgsPointXY
+from .utils.qt_compat import Qt, QMessageBox, QAbstractItemView, MsgLevel
+from qgis.core import QgsPointXY
 from .core.profile_chart_geometry import ProfileChartGeometry
 from .utils.json_handler import JSONHandler
-from .utils.logger import log
+from .utils.logger import log, push_message
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'qaerochart_dockwidget_base.ui'))
@@ -106,7 +106,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def _show_message(self, title: str, text: str, level: int) -> None:
         """Slot for ProfileController.message signal — pushes to QGIS message bar."""
         if self._iface is not None:
-            self._iface.messageBar().pushMessage(title, text, level=level, duration=5)
+            push_message(self._iface, title, text, level, duration=5)
     
     def _init_profile_form(self):
         """Initialize the profile creation form embedded in the dockwidget."""
@@ -228,9 +228,11 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         # Bind Delete key to bulk delete when list has focus
         try:
-            self._delete_shortcut = QShortcut(QKeySequence.Delete, self.listWidgetProfiles)
+            # PyQt6: QKeySequence.StandardKey.Delete; PyQt5: QKeySequence.Delete
+            _del_key = getattr(QKeySequence, 'Delete', None) or QKeySequence.StandardKey.Delete
+            self._delete_shortcut = QShortcut(_del_key, self.listWidgetProfiles)
             self._delete_shortcut.activated.connect(self.delete_profile)
-        except AttributeError:
+        except (AttributeError, TypeError):
             pass
 
         self._refresh_profile_list()
@@ -243,7 +245,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             act_rename = menu.addAction("Rename… (F2)")
             act_delete = menu.addAction("Delete")
             act_draw = menu.addAction("Draw")
-            action = menu.exec_(self.listWidgetProfiles.mapToGlobal(pos))
+            action = (menu.exec_ if hasattr(menu, 'exec_') else menu.exec)(self.listWidgetProfiles.mapToGlobal(pos))
             if action == act_rename:
                 self.rename_selected_profile()
             elif action == act_delete:
@@ -324,7 +326,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Please select a profile to edit.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
 
@@ -335,7 +337,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "Error", "Could not load profile configuration.",
-                    level=Qgis.Critical, duration=3
+                    level=MsgLevel.Critical, duration=3
                 )
             return
 
@@ -366,7 +368,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Please select a profile to draw.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
 
@@ -381,7 +383,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Please select a profile first.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
         profile_id = selected_items[0].data(Qt.UserRole)
@@ -395,7 +397,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Please select a profile first.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
         profile_id = selected_items[0].data(Qt.UserRole)
@@ -410,7 +412,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Please select at least one profile to delete.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
 
@@ -470,7 +472,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "No Selection",
                     "Please select a row to remove.",
-                    level=Qgis.Warning,
+                    level=MsgLevel.Warning,
                     duration=3
                 )
     
@@ -523,7 +525,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "No Selection",
                     "Select one or more rows to move.",
-                    level=Qgis.Warning,
+                    level=MsgLevel.Warning,
                     duration=3
                 )
             return
@@ -551,7 +553,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "No Selection",
                     "Select one or more rows to move.",
-                    level=Qgis.Warning,
+                    level=MsgLevel.Warning,
                     duration=3
                 )
             return
@@ -581,7 +583,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "Cannot Save",
                     "Please fill in required fields before saving.",
-                    level=Qgis.Warning,
+                    level=MsgLevel.Warning,
                     duration=5
                 )
                 return
@@ -613,7 +615,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "Configuration Saved",
                 f"Saved to: {os.path.basename(filepath)}",
-                level=Qgis.Success,
+                level=MsgLevel.Success,
                 duration=5
             )
             
@@ -623,7 +625,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "Save Error",
                 f"Failed to save configuration: {str(e)}",
-                level=Qgis.Critical,
+                level=MsgLevel.Critical,
                 duration=5
             )
             log(f"Save failed: {str(e)}", "ERROR")
@@ -654,7 +656,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "Configuration Loaded",
                     f"Loaded from: {os.path.basename(filepath)}",
-                    level=Qgis.Success,
+                    level=MsgLevel.Success,
                     duration=5
                 )
                 
@@ -664,7 +666,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "File Not Found",
                 str(e),
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=5
             )
             log(f"{str(e)}", "WARNING")
@@ -673,7 +675,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "Invalid Configuration",
                 str(e),
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=5
             )
             log(f"{str(e)}", "WARNING")
@@ -682,7 +684,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "Load Error",
                 f"Failed to load configuration: {str(e)}",
-                level=Qgis.Critical,
+                level=MsgLevel.Critical,
                 duration=5
             )
             log(f"Load failed: {str(e)}", "ERROR")
@@ -765,7 +767,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "No Selection", "Select a single profile to rename.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
 
@@ -789,12 +791,13 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         try:
             new_name, ok = dlg.getText(self, "Rename Profile", "New name:", text=current_name or "")
         except Exception:
-            iface.messageBar().pushMessage(
-                "Error",
-                "Unable to open rename dialog (QInputDialog not available).",
-                level=Qgis.Critical,
-                duration=4
-            )
+            if self._iface:
+                self._iface.messageBar().pushMessage(
+                    "Error",
+                    "Unable to open rename dialog (QInputDialog not available).",
+                    level=MsgLevel.Critical,
+                    duration=4
+                )
             return
         if not ok:
             return
@@ -803,7 +806,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             if self._iface:
                 self._iface.messageBar().pushMessage(
                     "Invalid Name", "Profile name cannot be empty.",
-                    level=Qgis.Warning, duration=3
+                    level=MsgLevel.Warning, duration=3
                 )
             return
 
@@ -813,10 +816,13 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
     def create_profile(self) -> None:
         """Create or update profile from the embedded form data."""
         log("Creating profile from embedded form...")
+        print(f"[qAeroChart][DIAG] create_profile called, _controller={self._controller!r}")
 
         config = self._build_config_from_form()
         if not config:
+            print(f"[qAeroChart][DIAG] _build_config_from_form returned falsy: {config!r}")
             return
+        print(f"[qAeroChart][DIAG] config keys: {list(config.keys())}")
 
         profile_name = None
         if hasattr(self.profile_form_widget, 'lineEdit_profile_name'):
@@ -826,9 +832,11 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             profile_name = f"Profile {runway.get('direction', 'N/A')}"
 
         if self._controller:
+            print(f"[qAeroChart][DIAG] Calling save_or_update_profile('{profile_name}', profile_id={self.current_profile_id!r})")
             saved = self._controller.save_or_update_profile(
                 profile_name, config, self.current_profile_id
             )
+            print(f"[qAeroChart][DIAG] save_or_update_profile returned: {saved}")
             if saved:
                 self.current_profile_id = None
                 try:
@@ -1000,14 +1008,14 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                 self._iface.messageBar().pushMessage(
                     "Using Preview Point",
                     "No origin was clicked â€” using last preview position as origin.",
-                    level=Qgis.Info,
+                    level=MsgLevel.Info,
                     duration=4
                 )
             else:
                 self._iface.messageBar().pushMessage(
                     "Missing Origin Point",
                     "Please select an origin point from the map.",
-                    level=Qgis.Warning,
+                    level=MsgLevel.Warning,
                     duration=5
                 )
                 return None
@@ -1025,7 +1033,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "Missing Runway Parameters",
                 "Please fill in all runway parameters.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=5
             )
             return None
@@ -1053,7 +1061,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
             self._iface.messageBar().pushMessage(
                 "No Profile Points",
                 "Please add at least one profile point.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=5
             )
             return None

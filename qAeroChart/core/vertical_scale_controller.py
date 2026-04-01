@@ -1,6 +1,6 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
-VerticalScaleController — MVC mediator between VerticalScaleDockWidget and
+VerticalScaleController â€” MVC mediator between VerticalScaleDockWidget and
 VerticalScaleManager / LayerManager.
 
 The dock widget must:
@@ -11,11 +11,11 @@ The dock widget must:
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import QObject, pyqtSignal
-from qgis.core import Qgis
 
 from .vertical_scale_manager import VerticalScaleManager
 from .layer_manager import LayerManager
 from ..utils.logger import log
+from ..utils.qt_compat import MsgLevel
 
 
 class VerticalScaleController(QObject):
@@ -35,6 +35,10 @@ class VerticalScaleController(QObject):
         self._scale_manager = scale_manager
         self._layer_manager = layer_manager
 
+    def _emit_msg(self, title: str, text: str, level) -> None:
+        """Emit ``message`` signal with int-casted level (PyQt6 strict enum safety)."""
+        self.message.emit(title, text, int(level))
+
     # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
@@ -50,7 +54,7 @@ class VerticalScaleController(QObject):
     def run_scale(self, params: dict) -> bool:
         """Draw a vertical scale on the map and persist the configuration.
 
-        Requires a ``LayerManager`` — returns False immediately when none is set.
+        Requires a ``LayerManager`` â€” returns False immediately when none is set.
         """
         if self._layer_manager is None:
             log("VerticalScaleController.run_scale: no layer manager", "WARNING")
@@ -73,16 +77,16 @@ class VerticalScaleController(QObject):
             )
             self._scale_manager.save_new(params)
             self.scales_changed.emit()
-            self.message.emit(
+            self._emit_msg(
                 "Vertical Scale",
                 f"Scale '{params.get('name', 'Vertical Scale')}' generated successfully.",
-                Qgis.Success,
+                MsgLevel.Success,
             )
             return True
 
         except Exception as e:
             log(f"VerticalScaleController.run_scale failed: {e}", "ERROR")
-            self.message.emit("Vertical Scale Error", str(e), Qgis.Critical)
+            self._emit_msg("Vertical Scale Error", str(e), MsgLevel.Critical)
             return False
 
     def rename_scale(self, scale_id: str, new_name: str) -> bool:
@@ -91,15 +95,15 @@ class VerticalScaleController(QObject):
             result = self._scale_manager.rename(scale_id, new_name)
             if result:
                 self.scales_changed.emit()
-                self.message.emit(
+                self._emit_msg(
                     "Vertical Scale",
                     f"Renamed to '{new_name}'.",
-                    Qgis.Info,
+                    MsgLevel.Info,
                 )
             return result
         except Exception as e:
             log(f"VerticalScaleController.rename_scale failed: {e}", "ERROR")
-            self.message.emit("Vertical Scale Error", str(e), Qgis.Critical)
+            self._emit_msg("Vertical Scale Error", str(e), MsgLevel.Critical)
             return False
 
     def delete_scale(self, scale_id: str) -> bool:
@@ -108,9 +112,9 @@ class VerticalScaleController(QObject):
             result = self._scale_manager.delete(scale_id)
             if result:
                 self.scales_changed.emit()
-                self.message.emit("Vertical Scale", "Scale deleted.", Qgis.Info)
+                self._emit_msg("Vertical Scale", "Scale deleted.", MsgLevel.Info)
             return result
         except Exception as e:
             log(f"VerticalScaleController.delete_scale failed: {e}", "ERROR")
-            self.message.emit("Vertical Scale Error", str(e), Qgis.Critical)
+            self._emit_msg("Vertical Scale Error", str(e), MsgLevel.Critical)
             return False

@@ -14,3 +14,8 @@ __pycache__/
 .agent/
 .claude/
 skills-lock.json
+
+# cache
+.cache/
+.pytest_cache/
+__pycache__/

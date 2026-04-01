@@ -17,11 +17,10 @@ from qgis.core import (
     QgsLayoutFrame,
     QgsLayoutSize,
     QgsLayoutPoint,
-    QgsUnitTypes,
 )
 
 from ..utils.logger import log
-from ..utils.qt_compat import QColor, QFont
+from ..utils.qt_compat import QColor, QFont, QgsUnitTypes
 from .distance_altitude_table import build_table_rows, compute_column_widths, extract_table_data
 
 # Layout-item custom property that identifies the table so it can be replaced

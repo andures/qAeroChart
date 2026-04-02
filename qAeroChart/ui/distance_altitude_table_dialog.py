@@ -65,28 +65,25 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         btn_resize = QtWidgets.QPushButton("Resize Table")
         btn_resize.clicked.connect(self._resize_table)
 
+        # Existing tables loader merged with action buttons to save vertical space
+        self.combo_existing = QtWidgets.QComboBox()
+        self.combo_existing.setMinimumWidth(180)
+        self.btn_load_existing = QtWidgets.QPushButton("Load from layout")
+        self.btn_load_existing.clicked.connect(self._load_from_existing)
+
         row_btns = QtWidgets.QHBoxLayout()
         row_btns.setSpacing(6)
         row_btns.addWidget(btn_load_json)
         row_btns.addWidget(btn_resize)
         row_btns.addWidget(btn_clear)
+        row_btns.addSpacing(12)
+        row_btns.addWidget(QtWidgets.QLabel("Existing tables"))
+        row_btns.addWidget(self.combo_existing)
+        row_btns.addWidget(self.btn_load_existing)
         row_btns.addStretch(1)
         controls.addLayout(row_btns, 2, 0, 1, 4)
 
-        # Existing tables loader (from layout)
-        self.combo_existing = QtWidgets.QComboBox()
-        self.combo_existing.setMinimumWidth(200)
-        self.btn_load_existing = QtWidgets.QPushButton("Load from layout")
-        self.btn_load_existing.clicked.connect(self._load_from_existing)
-        existing_layout = QtWidgets.QHBoxLayout()
-        existing_layout.setSpacing(6)
-        existing_layout.addWidget(QtWidgets.QLabel("Existing tables"))
-        existing_layout.addWidget(self.combo_existing)
-        existing_layout.addWidget(self.btn_load_existing)
-        existing_layout.addStretch(1)
-
         layout.addLayout(controls)
-        layout.addLayout(existing_layout)
 
         # Preview table
         self.table = QtWidgets.QTableWidget()
@@ -161,16 +158,16 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
         options_layout.addWidget(QtWidgets.QLabel("Cell margin (mm)"), 3, 0)
         options_layout.addWidget(self.spin_margin, 3, 1)
-        options_layout.addWidget(QtWidgets.QLabel("Font family"), 3, 2)
-        options_layout.addWidget(self.line_font_family, 3, 3)
+        options_layout.addWidget(QtWidgets.QLabel("Font size"), 3, 2)
+        options_layout.addWidget(self.spin_font_size, 3, 3)
 
-        options_layout.addWidget(QtWidgets.QLabel("Font size"), 4, 0)
-        options_layout.addWidget(self.spin_font_size, 4, 1)
-        options_layout.addWidget(QtWidgets.QLabel("X (mm)"), 4, 2)
-        options_layout.addWidget(self.spin_x, 4, 3)
+        options_layout.addWidget(QtWidgets.QLabel("Font family"), 4, 0)
+        options_layout.addWidget(self.line_font_family, 4, 1, 1, 3)
 
-        options_layout.addWidget(QtWidgets.QLabel("Y (mm)"), 5, 0)
-        options_layout.addWidget(self.spin_y, 5, 1)
+        options_layout.addWidget(QtWidgets.QLabel("X (mm)"), 5, 0)
+        options_layout.addWidget(self.spin_x, 5, 1)
+        options_layout.addWidget(QtWidgets.QLabel("Y (mm)"), 5, 2)
+        options_layout.addWidget(self.spin_y, 5, 3)
 
         layout.addWidget(options_grp)
 

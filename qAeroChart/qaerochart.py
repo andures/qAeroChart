@@ -99,6 +99,8 @@ class QAeroChart:
         # Vertical scale dock (Issue #57 standalone)
         self.vertical_scale_dock = None
         self.vertical_scale_action = None
+        # Distance/Altitude Table dialog (Issue #68: non-blocking, kept alive)
+        self._distance_dialog = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -399,12 +401,18 @@ class QAeroChart:
         return None
 
     def _open_distance_table_builder(self):
-        """Launch the distance/altitude table builder dialog and insert the table."""
+        """Launch the distance/altitude table builder dialog (issue #68: non-blocking)."""
 
         try:
             from .scripts import table_distance_altitude
         except Exception as exc:
             print(f"PLUGIN qAeroChart ERROR: Cannot import table builder: {exc}")
+            return
+
+        # If dialog already open, just bring it to front
+        if self._distance_dialog is not None and self._distance_dialog.isVisible():
+            self._distance_dialog.raise_()
+            self._distance_dialog.activateWindow()
             return
 
         default_layout = self._active_layout_name()
@@ -424,12 +432,20 @@ class QAeroChart:
                     self._attach_action_to_designer(designer)
             except Exception:
                 parent_window = None
+        # parent_window stays None when no layout designer is open so the
+        # dialog floats independently (centered on screen, not over the map).
 
-        try:
-            table_distance_altitude.run(self.iface, default_layout_name=default_layout, parent_window=parent_window)
-        except TypeError:
-            # Fallback for environments that still have the older signature
-            table_distance_altitude.run(self.iface, default_layout_name=default_layout)
+        dlg = table_distance_altitude.build_dialog(
+            iface=self.iface,
+            parent=parent_window,
+            default_layout_name=default_layout,
+        )
+        dlg.accepted.connect(lambda: table_distance_altitude.insert_from_dialog(dlg, self.iface))
+        dlg.finished.connect(lambda _: setattr(self, '_distance_dialog', None))
+        self._distance_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _on_layout_designer_opened(self, designer_iface):
         """Ensure our action appears in the layout designer toolbar when a composition opens."""

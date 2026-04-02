@@ -30,6 +30,7 @@ from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
 from .vertical_scale_dialog import VerticalScaleDockWidget
+from .horizontal_scale_dialog import HorizontalScaleDockWidget
 from .utils.logger import log
 from .utils.qt_compat import Qt
 import os.path
@@ -99,6 +100,9 @@ class QAeroChart:
         # Vertical scale dock (Issue #57 standalone)
         self.vertical_scale_dock = None
         self.vertical_scale_action = None
+        # Horizontal scale dock (Issue #69)
+        self.horizontal_scale_dock = None
+        self.horizontal_scale_action = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -221,6 +225,16 @@ class QAeroChart:
         self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
         self.tools_toolbar.addAction(self.vertical_scale_action)
 
+        # Horizontal Scale action (Issue #69)
+        hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_horizontal_scale.svg')
+        if not os.path.exists(hs_icon_path):
+            hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon.png')
+        self.horizontal_scale_action = QAction(QIcon(hs_icon_path), self.tr('Horizontal Scale'), self.iface.mainWindow())
+        self.horizontal_scale_action.setObjectName('qAeroChartHorizontalScaleAction')
+        self.horizontal_scale_action.setStatusTip(self.tr('Create horizontal scale (meters/feet)'))
+        self.horizontal_scale_action.triggered.connect(self.open_horizontal_scale_dock)
+        self.tools_toolbar.addAction(self.horizontal_scale_action)
+
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
         try:
             menu_bar = self.iface.mainWindow().menuBar()
@@ -229,6 +243,7 @@ class QAeroChart:
             # Add our primary action
             self.top_menu.addAction(self.generate_profile_action)
             self.top_menu.addAction(self.vertical_scale_action)
+            self.top_menu.addAction(self.horizontal_scale_action)
 
             # Try to position it right after qPANSOPY
             inserted = False
@@ -349,6 +364,16 @@ class QAeroChart:
                 pass
             self.vertical_scale_dock = None
             self.vertical_scale_action = None
+
+        # Close horizontal scale dock
+        if self.horizontal_scale_dock:
+            try:
+                self.iface.removeDockWidget(self.horizontal_scale_dock)
+                self.horizontal_scale_dock.deleteLater()
+            except Exception:
+                pass
+            self.horizontal_scale_dock = None
+            self.horizontal_scale_action = None
 
         # Clean up tool manager
         if self.tool_manager:
@@ -508,14 +533,33 @@ class QAeroChart:
             self.dockwidget.show()
 
     def open_vertical_scale_dock(self) -> None:
-        """Open (or raise) the standalone Vertical Scale dock widget."""
+        """Toggle the standalone Vertical Scale dock widget (Issue #67)."""
         try:
             if self.vertical_scale_dock is None:
                 self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+            elif self.vertical_scale_dock.isVisible():
+                self.vertical_scale_dock.hide()
+                return
             else:
                 self.vertical_scale_dock.show_menu()
             self.vertical_scale_dock.show()
             self.vertical_scale_dock.raise_()
         except Exception as e:
             log(f"Could not open Vertical Scale dock: {e}", "ERROR")
+
+    def open_horizontal_scale_dock(self) -> None:
+        """Toggle the standalone Horizontal Scale dock widget (Issue #69)."""
+        try:
+            if self.horizontal_scale_dock is None:
+                self.horizontal_scale_dock = HorizontalScaleDockWidget(self.iface.mainWindow())
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.horizontal_scale_dock)
+            elif self.horizontal_scale_dock.isVisible():
+                self.horizontal_scale_dock.hide()
+                return
+            else:
+                self.horizontal_scale_dock.show_menu()
+            self.horizontal_scale_dock.show()
+            self.horizontal_scale_dock.raise_()
+        except Exception as e:
+            log(f"Could not open Horizontal Scale dock: {e}", "ERROR")

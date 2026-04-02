@@ -1363,6 +1363,304 @@ class LayerManager:
 
         return lines_layer, labels_layer
 
+    # ------------------------------------------------------------------
+    # Standalone horizontal scale (Issue #69)
+    # ------------------------------------------------------------------
+
+    def create_horizontal_scale_run(
+        self,
+        name: str,
+        basepoint_x: float,
+        basepoint_y: float,
+        angle: float,
+        offset: float = -50.0,
+        tick_len: float = 15.0,
+        metre_right: int = 2500,
+        metre_left: int = 400,
+        metre_right_step: int = 500,
+        metre_left_step: int = 100,
+        ft_right: int = 8000,
+        ft_left: int = 1000,
+        ft_right_step: int = 1000,
+        ft_left_step: int = 100,
+    ) -> "tuple[object, object] | None":
+        """Create a self-contained horizontal scale bar on the map.
+
+        Produces two layers in a named group:
+          - ``{name} - Lines``: LineString with all tick/rail geometry
+          - ``{name} - Labels``: Point layer with QGIS text labels
+
+        The scale bar runs along *angle* from *basepoint*.  Positive values
+        extend in the forward direction; negative values extend backward.
+        The metre rail is above the axis (angle-90 perpendicular) and the
+        feet rail is below (angle+90 perpendicular).
+
+        Returns ``(lines_layer, labels_layer)`` on success, ``None`` on failure.
+        """
+        try:
+            from qgis.core import (
+                QgsPoint,
+                QgsPointXY,
+                QgsGeometry,
+                QgsFeature,
+                QgsVectorLayer,
+                QgsField,
+                QgsProject as _QgsProject,
+                QgsPalLayerSettings,
+                QgsTextFormat,
+                QgsTextBufferSettings,
+                QgsVectorLayerSimpleLabeling,
+                QgsNullSymbolRenderer,
+                Qgis,
+            )
+        except ImportError:
+            log("create_horizontal_scale_run: QGIS not available", "ERROR")
+            return None
+
+        from .horizontal_scale import horizontal_scale_tick_offsets
+        from ..utils.qt_compat import QFont, QColor, QVariant
+
+        offsets = horizontal_scale_tick_offsets(
+            metre_right=metre_right,
+            metre_left=metre_left,
+            metre_right_step=metre_right_step,
+            metre_left_step=metre_left_step,
+            ft_right=ft_right,
+            ft_left=ft_left,
+            ft_right_step=ft_right_step,
+            ft_left_step=ft_left_step,
+            tick_length_m=tick_len,
+        )
+
+        half_sp = offsets["half_spacing"]
+        small_len = tick_len * 0.45
+        srid = self._get_srid()
+
+        origin = QgsPoint(basepoint_x, basepoint_y)
+        # Perpendicular offset: move origin so the bar sits away from the feature
+        base_centre = origin.project(abs(offset), angle + (90.0 if offset >= 0 else -90.0))
+        # Two rails: metres above (angle-90 = "up"), feet below (angle+90 = "down")
+        base_m = base_centre.project(half_sp, angle - 90.0)   # metres rail
+        base_f = base_centre.project(half_sp, angle + 90.0)   # feet rail
+
+        # ---- Lines layer ----
+        lines_layer = QgsVectorLayer(
+            f"LineString?crs={srid}", f"{name} - Lines", "memory"
+        )
+        lines_prov = lines_layer.dataProvider()
+        lines_prov.addAttributes([QgsField("symbol", QVariant.String, len=30)])
+        lines_layer.updateFields()
+
+        feats: list[QgsFeature] = []
+        _fid = [1]
+
+        def add_line(pts: list, sym: str) -> None:
+            f = QgsFeature()
+            f.setGeometry(QgsGeometry.fromPolyline(pts))
+            f.setAttributes([_fid[0], sym])
+            _fid[0] += 1
+            feats.append(f)
+
+        # Helper: project a point along positive or negative direction
+        def fwd(base: QgsPoint, dist: float) -> QgsPoint:
+            return base.project(dist, angle)
+
+        def bwd(base: QgsPoint, dist: float) -> QgsPoint:
+            return base.project(dist, angle + 180.0)
+
+        # ---- Metre rail (upper): ticks extend further upward (angle-90) ----
+        m_pos_pts: list[QgsPoint] = []
+        for along in offsets["m_pos_ticks"]:
+            pt = fwd(base_m, along)
+            tip = pt.project(tick_len, angle - 90.0)
+            add_line([pt, tip], "m_tick_pos")
+            m_pos_pts.append(pt)
+
+        m_neg_pts: list[QgsPoint] = []
+        for along in offsets["m_neg_ticks"]:
+            pt = bwd(base_m, along)
+            tip = pt.project(tick_len, angle - 90.0)
+            add_line([pt, tip], "m_tick_neg")
+            m_neg_pts.append(pt)
+
+        # Metre minor ticks (positive side)
+        for along in offsets["m_pos_minor"]:
+            pt = fwd(base_m, along)
+            tip = pt.project(small_len, angle - 90.0)
+            add_line([pt, tip], "m_tick_pos_minor")
+
+        # Metre minor ticks (negative side)
+        for along in offsets["m_neg_minor"]:
+            pt = bwd(base_m, along)
+            tip = pt.project(small_len, angle - 90.0)
+            add_line([pt, tip], "m_tick_neg_minor")
+
+        # ---- Feet rail (lower): ticks extend downward (angle+90) ----
+        ft_pos_pts: list[QgsPoint] = []
+        for along in offsets["ft_pos_ticks"]:
+            pt = fwd(base_f, along)
+            tip = pt.project(tick_len, angle + 90.0)
+            add_line([pt, tip], "ft_tick_pos")
+            ft_pos_pts.append(pt)
+
+        ft_neg_pts: list[QgsPoint] = []
+        for along in offsets["ft_neg_ticks"]:
+            pt = bwd(base_f, along)
+            tip = pt.project(tick_len, angle + 90.0)
+            add_line([pt, tip], "ft_tick_neg")
+            ft_neg_pts.append(pt)
+
+        # Feet minor ticks (positive side)
+        for along in offsets["ft_pos_minor"]:
+            pt = fwd(base_f, along)
+            tip = pt.project(small_len, angle + 90.0)
+            add_line([pt, tip], "ft_tick_pos_minor")
+
+        # Feet minor ticks (negative side)
+        for along in offsets["ft_neg_minor"]:
+            pt = bwd(base_f, along)
+            tip = pt.project(small_len, angle + 90.0)
+            add_line([pt, tip], "ft_tick_neg_minor")
+
+        # ---- Main rails (spine lines connecting tick bases) ----
+        # Metre positive spine
+        if len(m_pos_pts) >= 2:
+            add_line(m_pos_pts, "m_spine_pos")
+        # Metre negative spine (zero + neg points)
+        if m_neg_pts:
+            add_line([m_pos_pts[0]] + m_neg_pts, "m_spine_neg")
+        # Feet positive spine
+        if len(ft_pos_pts) >= 2:
+            add_line(ft_pos_pts, "ft_spine_pos")
+        # Feet negative spine
+        if ft_neg_pts:
+            add_line([ft_pos_pts[0]] + ft_neg_pts, "ft_spine_neg")
+
+        # ---- Secondary inner rail between the two spines at zero ----
+        zero_m = fwd(base_m, 0.0)
+        zero_f = fwd(base_f, 0.0)
+        add_line([zero_m, zero_f], "centre_connector")
+
+        lines_prov.addFeatures(feats)
+        lines_layer.updateExtents()
+
+        # ---- Force black line symbology ----
+        try:
+            from qgis.core import (
+                QgsSimpleLineSymbolLayer as _SLL,
+                QgsLineSymbol as _LS,
+                QgsSingleSymbolRenderer as _SSR,
+            )
+            _sl = _SLL()
+            _sl.setColor(QColor("black"))
+            _sl.setWidth(0.25)
+            _sl.setWidthUnit(QgsUnitTypes.RenderMillimeters)
+            _sym = _LS()
+            _sym.changeSymbolLayer(0, _sl)
+            lines_layer.setRenderer(_SSR(_sym))
+        except Exception as _e:
+            log(f"Could not set horizontal scale lines symbology: {_e}", "WARNING")
+
+        # ---- Labels layer ----
+        labels_layer = QgsVectorLayer(
+            f"Point?crs={srid}", f"{name} - Labels", "memory"
+        )
+        lbl_prov = labels_layer.dataProvider()
+        lbl_prov.addAttributes([
+            QgsField("id", QVariant.Int),
+            QgsField("txt_label", QVariant.String, len=50),
+        ])
+        labels_layer.updateFields()
+
+        lbl_feats: list[QgsFeature] = []
+        _lid = [1]
+
+        def add_label(pt: QgsPoint, text: str) -> None:
+            f = QgsFeature()
+            f.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(pt.x(), pt.y())))
+            f.setAttributes([_lid[0], text])
+            _lid[0] += 1
+            lbl_feats.append(f)
+
+        _FT_TO_M = 0.3048
+        lbl_offset = tick_len * 1.3
+
+        # Metre value labels (above ticks → angle-90)
+        for v in [0] + list(range(metre_right_step, metre_right + 1, metre_right_step)):
+            pt = fwd(base_m, float(v))
+            add_label(pt.project(lbl_offset, angle - 90.0), str(v))
+        for v in range(metre_left_step, metre_left + 1, metre_left_step):
+            pt = bwd(base_m, float(v))
+            add_label(pt.project(lbl_offset, angle - 90.0), str(v))
+
+        # "METRES" unit header — centred above the bar
+        centre_along = metre_right / 2.0
+        add_label(
+            fwd(base_m, centre_along).project(lbl_offset * 1.8, angle - 90.0),
+            "METRES",
+        )
+
+        # Feet value labels (below ticks → angle+90)
+        ft_right_steps = [0] + list(range(ft_right_step, ft_right + 1, ft_right_step))
+        for v in ft_right_steps:
+            pt = fwd(base_f, v * _FT_TO_M)
+            add_label(pt.project(lbl_offset, angle + 90.0), str(v))
+        for v in range(ft_left_step, ft_left + 1, ft_left_step):
+            pt = bwd(base_f, v * _FT_TO_M)
+            add_label(pt.project(lbl_offset, angle + 90.0), str(v))
+
+        # "FEET" unit footer
+        add_label(
+            fwd(base_f, (ft_right * _FT_TO_M) / 2.0).project(lbl_offset * 1.8, angle + 90.0),
+            "FEET",
+        )
+
+        lbl_prov.addFeatures(lbl_feats)
+        labels_layer.updateExtents()
+
+        # ---- Configure labeling ----
+        try:
+            pal = QgsPalLayerSettings()
+            pal.fieldName = "txt_label"
+            try:
+                pal.placement = Qgis.LabelPlacement.OverPoint
+            except AttributeError:
+                pal.placement = QgsPalLayerSettings.OverPoint
+            fmt = QgsTextFormat()
+            fmt.setFont(QFont("Segoe UI", 8))
+            fmt.setSize(8.0)
+            fmt.setColor(QColor("black"))
+            buf = QgsTextBufferSettings()
+            buf.setEnabled(True)
+            buf.setSize(0.6)
+            buf.setColor(QColor("white"))
+            fmt.setBuffer(buf)
+            pal.setFormat(fmt)
+            labels_layer.setLabelsEnabled(True)
+            labels_layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
+            labels_layer.setRenderer(QgsNullSymbolRenderer())
+        except Exception as e:
+            log(f"Could not configure labeling for horizontal scale: {e}", "WARNING")
+
+        # ---- Add layers to project under named group ----
+        try:
+            project = _QgsProject.instance()
+            root = project.layerTreeRoot()
+            group = root.findGroup(name)
+            if group is None:
+                group = root.addGroup(name)
+            project.addMapLayer(lines_layer, False)
+            project.addMapLayer(labels_layer, False)
+            group.addLayer(lines_layer)
+            group.addLayer(labels_layer)
+            log(f"Horizontal scale '{name}' created: "
+                f"{len(feats)} line features, {len(lbl_feats)} labels")
+        except Exception as e:
+            log(f"Could not add horizontal scale layers to project: {e}", "ERROR")
+            return None
+
+        return lines_layer, labels_layer
+
     def _get_srid(self) -> str:
         """Return the project CRS auth-id or a safe fallback."""
         try:

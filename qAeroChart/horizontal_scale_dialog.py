@@ -504,6 +504,8 @@ class HorizontalScaleDockWidget(QtWidgets.QDockWidget):
         if not self.tool_manager:
             self.tool_manager = ProfilePointToolManager(canvas, iface)
         tool = self.tool_manager.create_tool()
+        if hasattr(tool, 'set_preview_generator'):
+            tool.set_preview_generator(self._generate_scale_preview)
         try:
             tool.originSelected.disconnect(self._on_origin_selected)
         except Exception:
@@ -585,3 +587,117 @@ class HorizontalScaleDockWidget(QtWidgets.QDockWidget):
                 iface.messageBar().pushCritical("Horizontal Scale", f"Error: {e}")
             except Exception:
                 print(f"Horizontal Scale ERROR: {e}")
+
+    # ------------------------------------------------------------------
+    # Live map preview
+    # ------------------------------------------------------------------
+
+    def _generate_scale_preview(self, origin_point):
+        """Generate tick segments and labels for live canvas preview while picking origin."""
+        _FT_TO_M = 0.3048
+        try:
+            angle = float(self.spin_azimuth.value())
+            offset = float(self.dspin_offset.value())
+            tick_len = float(self.dspin_tick.value())
+            m_right = int(self.spin_m_right.value())
+            m_left = int(self.spin_m_left.value())
+            m_right_step = int(self.spin_m_right_step.value())
+            m_left_step = int(self.spin_m_left_step.value())
+            ft_right = int(self.spin_ft_right.value())
+            ft_left = int(self.spin_ft_left.value())
+            ft_right_step = int(self.spin_ft_right_step.value())
+            ft_left_step = int(self.spin_ft_left_step.value())
+
+            half_sp = tick_len * 0.5
+            lbl_off = tick_len * 1.3
+            small_len = tick_len * 0.45
+
+            bar_centre = QgsPoint(origin_point).project(
+                abs(offset), angle + (90.0 if offset >= 0 else -90.0)
+            )
+            base_m = bar_centre.project(half_sp, angle - 90.0)
+            base_f = bar_centre.project(half_sp, angle + 90.0)
+
+            tick_segments = []
+            tick_labels = []
+
+            def fwd(base, dist):
+                return base.project(dist, angle)
+
+            def bwd(base, dist):
+                return base.project(dist, angle + 180.0)
+
+            # ---- Metre rail (upper) ----
+            m_pos_pts, m_neg_pts = [], []
+            for v in range(0, m_right + 1, m_right_step):
+                pt = fwd(base_m, float(v))
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(tick_len, angle - 90.0))])
+                m_pos_pts.append(QgsPointXY(pt))
+                tick_labels.append({"pos": QgsPointXY(pt.project(lbl_off, angle - 90.0)), "text": str(v)})
+
+            for v in range(m_left_step, m_left + 1, m_left_step):
+                pt = bwd(base_m, float(v))
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(tick_len, angle - 90.0))])
+                m_neg_pts.append(QgsPointXY(pt))
+                tick_labels.append({"pos": QgsPointXY(pt.project(lbl_off, angle - 90.0)), "text": str(v)})
+
+            # Minor ticks — metre rail
+            for v in range(m_right_step // 2, m_right, m_right_step):
+                pt = fwd(base_m, float(v))
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(small_len, angle - 90.0))])
+            for v in range(m_left_step // 2, m_left, m_left_step):
+                pt = bwd(base_m, float(v))
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(small_len, angle - 90.0))])
+
+            # "METRES" header
+            ctr_m = fwd(base_m, m_right / 2.0)
+            tick_labels.append({"pos": QgsPointXY(ctr_m.project(lbl_off * 1.8, angle - 90.0)), "text": "METRES"})
+
+            # ---- Feet rail (lower) ----
+            ft_pos_pts, ft_neg_pts = [], []
+            for v in range(0, ft_right + 1, ft_right_step):
+                pt = fwd(base_f, v * _FT_TO_M)
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(tick_len, angle + 90.0))])
+                ft_pos_pts.append(QgsPointXY(pt))
+                tick_labels.append({"pos": QgsPointXY(pt.project(lbl_off, angle + 90.0)), "text": str(v)})
+
+            for v in range(ft_left_step, ft_left + 1, ft_left_step):
+                pt = bwd(base_f, v * _FT_TO_M)
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(tick_len, angle + 90.0))])
+                ft_neg_pts.append(QgsPointXY(pt))
+                tick_labels.append({"pos": QgsPointXY(pt.project(lbl_off, angle + 90.0)), "text": str(v)})
+
+            # Minor ticks — feet rail
+            for v in range(ft_right_step // 2, ft_right, ft_right_step):
+                pt = fwd(base_f, v * _FT_TO_M)
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(small_len, angle + 90.0))])
+            for v in range(ft_left_step // 2, ft_left, ft_left_step):
+                pt = bwd(base_f, v * _FT_TO_M)
+                tick_segments.append([QgsPointXY(pt), QgsPointXY(pt.project(small_len, angle + 90.0))])
+
+            # "FEET" header
+            ctr_f = fwd(base_f, ft_right * _FT_TO_M / 2.0)
+            tick_labels.append({"pos": QgsPointXY(ctr_f.project(lbl_off * 1.8, angle + 90.0)), "text": "FEET"})
+
+            # Spine extents
+            m_left_end = bwd(base_m, float(m_left)) if m_left > 0 else fwd(base_m, 0.0)
+            m_right_end = fwd(base_m, float(m_right))
+            f_left_end = bwd(base_f, ft_left * _FT_TO_M) if ft_left > 0 else fwd(base_f, 0.0)
+            f_right_end = fwd(base_f, ft_right * _FT_TO_M)
+
+            profile_line = [QgsPointXY(m_left_end), QgsPointXY(m_right_end)]
+            feet_line = [QgsPointXY(f_left_end), QgsPointXY(f_right_end)]
+
+            return {
+                "profile_line": profile_line,
+                "baseline": [profile_line, feet_line],
+                "tick_segments": tick_segments,
+                "grid_segments": [],
+                "tick_labels": tick_labels,
+            }
+        except Exception:
+            return {"profile_line": [], "tick_segments": [], "tick_labels": []}
+
+    def closeEvent(self, event):
+        self._restore_previous_map_tool()
+        super().closeEvent(event)

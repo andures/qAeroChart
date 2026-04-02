@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Double-rail horizontal bar -->
+  <rect x="6" y="28" width="52" height="8" fill="none" stroke="#000" stroke-width="2"/>
+  <!-- Upper ticks (metres) pointing up -->
+  <line x1="10" y1="28" x2="10" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="20" y1="28" x2="20" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="30" y1="28" x2="30" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="40" y1="28" x2="40" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="50" y1="28" x2="50" y2="20" stroke="#000" stroke-width="2"/>
+  <!-- Lower ticks (feet) pointing down -->
+  <line x1="12" y1="36" x2="12" y2="44" stroke="#000" stroke-width="2"/>
+  <line x1="22" y1="36" x2="22" y2="44" stroke="#000" stroke-width="2"/>
+  <line x1="32" y1="36" x2="32" y2="44" stroke="#000" stroke-width="2"/>
+  <line x1="42" y1="36" x2="42" y2="44" stroke="#000" stroke-width="2"/>
+  <line x1="52" y1="36" x2="52" y2="44" stroke="#000" stroke-width="2"/>
+  <!-- Labels -->
+  <text x="4" y="19" font-size="8" fill="#000" font-family="Arial">m</text>
+  <text x="4" y="52" font-size="8" fill="#000" font-family="Arial">ft</text>
+</svg>

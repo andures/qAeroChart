@@ -480,42 +480,45 @@ class QAeroChart:
     # --------------------------------------------------------------------------
 
     def run(self):
-        """Run method that loads and starts the plugin"""
+        """Toggle the Generate Profile dock (issue #67: clicking icon closes if already open)."""
 
-        if not self.pluginIsActive:
-            self.pluginIsActive = True
-
+        # First-time creation
+        if self.dockwidget is None:
             log("Starting...")
-
-            # dockwidget may not exist if:
-            #    first run of plugin
-            #    removed on close (see self.onClosePlugin method)
-            if self.dockwidget is None:
-                # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = QAeroChartDockWidget(
-                    iface=self.iface, controller=self._controller
-                )
-
-            # Pass tool manager (draw tool lives outside the controller)
+            self.pluginIsActive = True
+            self.dockwidget = QAeroChartDockWidget(
+                iface=self.iface, controller=self._controller
+            )
             self.dockwidget.tool_manager = self.tool_manager
-
-            # connect to provide cleanup on closing of dockwidget
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)
-
-            # show the dockwidget
-            # TODO: fix to allow choice of dock location
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+            return
+
+        # Toggle: hide if visible, show if hidden
+        if self.dockwidget.isVisible():
+            self.dockwidget.hide()
+            self.pluginIsActive = False
+        else:
+            self.pluginIsActive = True
+            self.dockwidget.show()
+            self.dockwidget.raise_()
 
     def open_vertical_scale_dock(self) -> None:
-        """Open (or raise) the standalone Vertical Scale dock widget."""
+        """Toggle the Vertical Scale dock (issue #67: clicking icon closes if already open)."""
         try:
             if self.vertical_scale_dock is None:
                 self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+                self.vertical_scale_dock.show()
+                return
+
+            # Toggle: hide if visible, show if hidden
+            if self.vertical_scale_dock.isVisible():
+                self.vertical_scale_dock.hide()
             else:
                 self.vertical_scale_dock.show_menu()
-            self.vertical_scale_dock.show()
-            self.vertical_scale_dock.raise_()
+                self.vertical_scale_dock.show()
+                self.vertical_scale_dock.raise_()
         except Exception as e:
-            log(f"Could not open Vertical Scale dock: {e}", "ERROR")
+            log(f"Could not toggle Vertical Scale dock: {e}", "ERROR")

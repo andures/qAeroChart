@@ -6,6 +6,7 @@ except ImportError:
     except ImportError:
         from PyQt5 import QtCore, QtWidgets  # type: ignore
 from ..utils.qt_compat import Qt, QAbstractItemView
+from ..core.table_style_manager import TableStyleManager
 
 
 class DistanceAltitudeTableDialog(QtWidgets.QDialog):
@@ -18,7 +19,8 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         # Non-modal so the layout window does not minimize
         self.setWindowModality(Qt.NonModal)
         self.setModal(False)
-        self.resize(720, 520)
+        self.resize(720, 560)
+        self._style_manager = TableStyleManager()
         self._build_ui()
         self._init_table()
         self._layout = None
@@ -35,13 +37,35 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         title.setStyleSheet("font-weight: bold; font-size: 11pt;")
         layout.addWidget(title)
 
-        # Top controls
+        # ---- Table Style section (Issue #71) ----
+        style_grp = QtWidgets.QGroupBox("Table Style")
+        style_row = QtWidgets.QHBoxLayout(style_grp)
+        style_row.setSpacing(6)
+        self.combo_styles = QtWidgets.QComboBox()
+        self.combo_styles.setMinimumWidth(160)
+        self._reload_styles()
+        btn_apply_style = QtWidgets.QPushButton("Apply")
+        btn_apply_style.setToolTip("Apply selected style: fills placement fields and seeds table header cells")
+        btn_apply_style.clicked.connect(self._apply_selected_style)
+        btn_save_style = QtWidgets.QPushButton("Save as style…")
+        btn_save_style.setToolTip("Save current placement settings as a new named style")
+        btn_save_style.clicked.connect(self._save_current_as_style)
+        self.btn_delete_style = QtWidgets.QPushButton("Delete style")
+        self.btn_delete_style.setToolTip("Delete selected style (built-in styles cannot be deleted)")
+        self.btn_delete_style.clicked.connect(self._delete_selected_style)
+        style_row.addWidget(QtWidgets.QLabel("Style"))
+        style_row.addWidget(self.combo_styles)
+        style_row.addWidget(btn_apply_style)
+        style_row.addWidget(btn_save_style)
+        style_row.addWidget(self.btn_delete_style)
+        style_row.addStretch(1)
+        layout.addWidget(style_grp)
+
+        # ---- Top controls (rows / cols — ①② fields removed per Issue #71) ----
         controls = QtWidgets.QGridLayout()
         controls.setHorizontalSpacing(8)
         controls.setVerticalSpacing(6)
 
-        self.line_top_left = QtWidgets.QLineEdit("NM TO RWY00")
-        self.line_row1_label = QtWidgets.QLineEdit("ALTITUDE")
         self.spin_rows = QtWidgets.QSpinBox()
         self.spin_rows.setRange(1, 50)
         self.spin_rows.setValue(2)
@@ -49,14 +73,10 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.spin_cols.setRange(1, 50)
         self.spin_cols.setValue(6)
 
-        controls.addWidget(QtWidgets.QLabel("Top-left text"), 0, 0)
-        controls.addWidget(self.line_top_left, 0, 1)
-        controls.addWidget(QtWidgets.QLabel("First column text"), 0, 2)
-        controls.addWidget(self.line_row1_label, 0, 3)
-        controls.addWidget(QtWidgets.QLabel("Rows"), 1, 0)
-        controls.addWidget(self.spin_rows, 1, 1)
-        controls.addWidget(QtWidgets.QLabel("Columns"), 1, 2)
-        controls.addWidget(self.spin_cols, 1, 3)
+        controls.addWidget(QtWidgets.QLabel("Rows"), 0, 0)
+        controls.addWidget(self.spin_rows, 0, 1)
+        controls.addWidget(QtWidgets.QLabel("Columns"), 0, 2)
+        controls.addWidget(self.spin_cols, 0, 3)
 
         btn_load_json = QtWidgets.QPushButton("Load JSON")
         btn_load_json.clicked.connect(self._load_json)
@@ -71,7 +91,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         row_btns.addWidget(btn_resize)
         row_btns.addWidget(btn_clear)
         row_btns.addStretch(1)
-        controls.addLayout(row_btns, 2, 0, 1, 4)
+        controls.addLayout(row_btns, 1, 0, 1, 4)
 
         # Existing tables loader (from layout)
         self.combo_existing = QtWidgets.QComboBox()
@@ -209,8 +229,9 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
     def _init_table(self):
         self._resize_table()
-        # Seed defaults
-        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem(self.line_top_left.text()))
+        # Seed defaults — apply the currently selected style so cells pick up
+        # top_left_text / first_col_text from the style config (Issue #71)
+        self._apply_selected_style(seed_only=True)
         for col in range(1, self.table.columnCount()):
             self.table.setItem(0, col, QtWidgets.QTableWidgetItem(str(col)))
         if self.table.rowCount() > 1:
@@ -413,12 +434,11 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.spin_rows.setValue(2)
         self.spin_cols.setValue(cols)
         self._resize_table()
-        self.line_top_left.setText(f"NM TO RWY{thr}")
-        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem(self.line_top_left.text()))
+        # Cells ①② set directly (fields removed per Issue #71; user can edit in preview)
+        self.table.setItem(0, 0, QtWidgets.QTableWidgetItem(f"NM TO RWY{thr}"))
         for idx, key in enumerate(keys, start=1):
             self.table.setItem(0, idx, QtWidgets.QTableWidgetItem(str(key)))
-        self.line_row1_label.setText("ALTITUDE")
-        self.table.setItem(1, 0, QtWidgets.QTableWidgetItem(self.line_row1_label.text()))
+        self.table.setItem(1, 0, QtWidgets.QTableWidgetItem("ALTITUDE"))
         for idx, val in enumerate(values, start=1):
             self.table.setItem(1, idx, QtWidgets.QTableWidgetItem(str(val)))
 
@@ -449,6 +469,121 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
     def selected_layout_name(self):
         return self.combo_layouts.currentText()
+
+    # ------------------------------------------------------------------
+    # Table Style helpers (Issue #71)
+    # ------------------------------------------------------------------
+
+    def _reload_styles(self) -> None:
+        """Repopulate the style combo from the manager."""
+        self.combo_styles.blockSignals(True)
+        current = self.combo_styles.currentText()
+        self.combo_styles.clear()
+        for item in self._style_manager.get_all():
+            self.combo_styles.addItem(item["name"])
+        idx = self.combo_styles.findText(current)
+        self.combo_styles.setCurrentIndex(max(idx, 0))
+        self.combo_styles.blockSignals(False)
+
+    def _on_style_selection_changed(self) -> None:
+        """Enable/disable delete button — built-ins cannot be deleted."""
+        name = self.combo_styles.currentText()
+        all_styles = self._style_manager.get_all()
+        builtin = next((s["builtin"] for s in all_styles if s["name"] == name), True)
+        try:
+            self.btn_delete_style.setEnabled(not builtin)
+        except Exception:
+            pass
+
+    def _apply_selected_style(self, *, seed_only: bool = False) -> None:
+        """Apply the currently selected style to the placement fields and seed header cells.
+
+        Parameters
+        ----------
+        seed_only:
+            When True, only set the table header cells (called from _init_table);
+            placement fields are not touched so their existing defaults survive.
+        """
+        name = self.combo_styles.currentText()
+        cfg = self._style_manager.get_config(name)
+        if not cfg:
+            return
+        # Seed table header cells
+        top_left = cfg.get("top_left_text", "NM TO RWY00")
+        first_col = cfg.get("first_col_text", "ALTITUDE")
+        if self.table.rowCount() > 0 and self.table.columnCount() > 0:
+            self.table.setItem(0, 0, QtWidgets.QTableWidgetItem(top_left))
+        if self.table.rowCount() > 1 and self.table.columnCount() > 0:
+            self.table.setItem(1, 0, QtWidgets.QTableWidgetItem(first_col))
+        if seed_only:
+            return
+        # Fill placement fields
+        if cfg.get("total_width") is not None:
+            self.spin_total_width.setValue(float(cfg["total_width"]))
+        if cfg.get("first_col_width") is not None:
+            self.spin_first_col.setValue(float(cfg["first_col_width"]))
+        if cfg.get("height") is not None:
+            self.spin_height.setValue(float(cfg["height"]))
+        if cfg.get("stroke") is not None:
+            self.spin_stroke.setValue(float(cfg["stroke"]))
+        if cfg.get("cell_margin") is not None:
+            self.spin_margin.setValue(float(cfg["cell_margin"]))
+        if cfg.get("font_family"):
+            self.line_font_family.setText(cfg["font_family"])
+        if cfg.get("font_size") is not None:
+            self.spin_font_size.setValue(float(cfg["font_size"]))
+
+    def _save_current_as_style(self) -> None:
+        """Prompt for a name and save current placement settings as a new style."""
+        name, ok = QtWidgets.QInputDialog.getText(
+            self, "Save Style", "Style name:", text="My Style"
+        )
+        if not ok:
+            return
+        name = (name or "").strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Name cannot be empty.")
+            return
+        # Build style dict from current form values + current table header cells
+        top_left = ""
+        first_col = ""
+        try:
+            item00 = self.table.item(0, 0)
+            top_left = item00.text() if item00 else ""
+            item10 = self.table.item(1, 0)
+            first_col = item10.text() if item10 else ""
+        except Exception:
+            pass
+        params = {
+            "name": name,
+            "top_left_text": top_left,
+            "first_col_text": first_col,
+            "total_width": self.spin_total_width.value(),
+            "first_col_width": self.spin_first_col.value(),
+            "height": self.spin_height.value(),
+            "stroke": self.spin_stroke.value(),
+            "cell_margin": self.spin_margin.value(),
+            "font_family": self.line_font_family.text() or "Arial",
+            "font_size": self.spin_font_size.value(),
+        }
+        # Overwrite if same name already exists as a project style,
+        # otherwise save as new
+        if not self._style_manager.update(name, params):
+            self._style_manager.save_new(params)
+        self._reload_styles()
+        idx = self.combo_styles.findText(name)
+        if idx >= 0:
+            self.combo_styles.setCurrentIndex(idx)
+
+    def _delete_selected_style(self) -> None:
+        """Delete the currently selected (non-builtin) style."""
+        name = self.combo_styles.currentText()
+        if not self._style_manager.delete(name):
+            QtWidgets.QMessageBox.information(
+                self, "Cannot Delete", f"'{name}' is a built-in style and cannot be deleted."
+            )
+            return
+        self._reload_styles()
 
     def accept(self):  # Validate before closing
         if self.table.columnCount() < 1 or self.table.rowCount() < 1:

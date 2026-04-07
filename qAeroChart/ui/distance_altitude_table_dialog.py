@@ -190,6 +190,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         # Signals
         self.spin_rows.valueChanged.connect(self._resize_table)
         self.spin_cols.valueChanged.connect(self._resize_table)
+        self.combo_layouts.currentIndexChanged.connect(self._attach_current_layout)
 
     def select_layout(self, name):
         """Select a layout in the combo if it exists (no-op otherwise)."""
@@ -214,6 +215,8 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
             self.table.setItem(0, col, QtWidgets.QTableWidgetItem(str(col)))
         if self.table.rowCount() > 1:
             self.table.setItem(1, 0, QtWidgets.QTableWidgetItem(self.line_row1_label.text()))
+        # Auto-attach whichever layout is currently selected in the combo
+        self._attach_current_layout()
 
     # ---------- Data helpers ----------
     def _resize_table(self):
@@ -311,7 +314,27 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
         return {"rows": rows, "config": cfg}
 
+    def _attach_current_layout(self) -> None:
+        """Attach whichever layout is currently selected in combo_layouts and refresh the existing-tables list."""
+        name = self.combo_layouts.currentText()
+        if not name or name.startswith("("):
+            self._existing_tables = []
+            self.combo_existing.clear()
+            self.combo_existing.addItem("(no layout selected)")
+            return
+        try:
+            from qgis.core import QgsProject
+            layout = QgsProject.instance().layoutManager().layoutByName(name)
+            if layout is not None:
+                self._layout = layout
+                self._refresh_existing_tables()
+        except Exception:
+            pass
+
     def _load_from_existing(self):
+        # If no tables are cached yet, try attaching the current layout first
+        if not self._existing_tables:
+            self._attach_current_layout()
         if not self._existing_tables:
             return
         idx = self.combo_existing.currentIndex()

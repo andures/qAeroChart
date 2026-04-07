@@ -135,31 +135,22 @@ def _build_table(table_rows, cfg, layout):
     return t
 
 
-def run(iface=None, default_layout_name=None, parent_window=None, **_):
-    """Open the dialog, then add the table to the chosen layout.
-
-    Accepts **_ to stay compatible if callers pass extra keyword args.
-    """
-
-    parent = parent_window if parent_window is not None else (iface.mainWindow() if iface else None)
+def build_dialog(iface=None, parent=None, default_layout_name=None):
+    """Create and configure the dialog without showing it (non-blocking flow)."""
     dlg = DistanceAltitudeTableDialog(iface=iface, parent=parent)
     if default_layout_name:
         dlg.select_layout(default_layout_name)
-    # Attach layout before showing so existing tables list populates
-    layout_name = default_layout_name
-    if layout_name:
-        project = QgsProject.instance()
-        layout = _get_or_create_layout(layout_name, project)
         try:
+            project = QgsProject.instance()
+            layout = _get_or_create_layout(default_layout_name, project)
             dlg.set_layout(layout)
         except Exception:
             pass
+    return dlg
 
-    # PyQt6 removed exec_() — use exec() instead; Accepted=1 so truthiness check works for both
-    result = (dlg.exec_ if hasattr(dlg, 'exec_') else dlg.exec)()
-    if not result:
-        return
 
+def insert_from_dialog(dlg, iface=None):
+    """Read data from an accepted dialog and insert the table into the chosen layout."""
     table_rows = dlg.table_data()
     cfg = dlg.config()
     layout_name = cfg["layout_name"]
@@ -183,4 +174,21 @@ def run(iface=None, default_layout_name=None, parent_window=None, **_):
         print(
             f"Table added to layout '{layout.name()}' with {len(table_rows[0]) if table_rows else 0} columns."
         )
+
+
+def run(iface=None, default_layout_name=None, parent_window=None, **_):
+    """Open the dialog, then add the table to the chosen layout.
+
+    Blocking version kept for backward-compat (e.g. Python console usage).
+    For the plugin toolbar action, _open_distance_table_builder() uses the
+    non-blocking build_dialog() / insert_from_dialog() path instead.
+    """
+    dlg = build_dialog(iface=iface, parent=parent_window, default_layout_name=default_layout_name)
+
+    # PyQt6 removed exec_() — use exec() instead; Accepted=1 so truthiness check works for both
+    result = (dlg.exec_ if hasattr(dlg, 'exec_') else dlg.exec)()
+    if not result:
+        return
+
+    insert_from_dialog(dlg, iface)
 

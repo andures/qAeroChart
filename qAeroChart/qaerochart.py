@@ -30,6 +30,7 @@ from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
 from .vertical_scale_dialog import VerticalScaleDockWidget
+from .horizontal_scale_dialog import HorizontalScaleDockWidget
 from .utils.logger import log
 from .utils.qt_compat import Qt
 import os.path
@@ -223,6 +224,16 @@ class QAeroChart:
         self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
         self.tools_toolbar.addAction(self.vertical_scale_action)
 
+        # Horizontal Scale action (Issue #69)
+        hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_horizontal_scale.svg')
+        if not os.path.exists(hs_icon_path):
+            hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon.png')
+        self.horizontal_scale_action = QAction(QIcon(hs_icon_path), self.tr('Horizontal Scale'), self.iface.mainWindow())
+        self.horizontal_scale_action.setObjectName('qAeroChartHorizontalScaleAction')
+        self.horizontal_scale_action.setStatusTip(self.tr('Create horizontal scale (meters/feet)'))
+        self.horizontal_scale_action.triggered.connect(self.open_horizontal_scale_dock)
+        self.tools_toolbar.addAction(self.horizontal_scale_action)
+
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
         try:
             menu_bar = self.iface.mainWindow().menuBar()
@@ -231,6 +242,7 @@ class QAeroChart:
             # Add our primary action
             self.top_menu.addAction(self.generate_profile_action)
             self.top_menu.addAction(self.vertical_scale_action)
+            self.top_menu.addAction(self.horizontal_scale_action)
 
             # Try to position it right after qPANSOPY
             inserted = False
@@ -351,6 +363,16 @@ class QAeroChart:
                 pass
             self.vertical_scale_dock = None
             self.vertical_scale_action = None
+
+        # Close horizontal scale dock
+        if self.horizontal_scale_dock:
+            try:
+                self.iface.removeDockWidget(self.horizontal_scale_dock)
+                self.horizontal_scale_dock.deleteLater()
+            except Exception:
+                pass
+            self.horizontal_scale_dock = None
+            self.horizontal_scale_action = None
 
         # Clean up tool manager
         if self.tool_manager:

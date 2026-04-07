@@ -211,7 +211,6 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.spin_rows.valueChanged.connect(self._resize_table)
         self.spin_cols.valueChanged.connect(self._resize_table)
         self.combo_layouts.currentIndexChanged.connect(self._attach_current_layout)
-        self.combo_styles.currentIndexChanged.connect(self._on_style_selection_changed)
 
     def select_layout(self, name):
         """Select a layout in the combo if it exists (no-op otherwise)."""
@@ -235,6 +234,8 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self._apply_selected_style(seed_only=True)
         for col in range(1, self.table.columnCount()):
             self.table.setItem(0, col, QtWidgets.QTableWidgetItem(str(col)))
+        if self.table.rowCount() > 1:
+            self.table.setItem(1, 0, QtWidgets.QTableWidgetItem(self.line_row1_label.text()))
         # Auto-attach whichever layout is currently selected in the combo
         self._attach_current_layout()
 

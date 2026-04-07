@@ -30,6 +30,7 @@ from qgis.PyQt.QtWidgets import QAction, QMenu, QToolBar
 # Import the code for the DockWidget
 from .qaerochart_dockwidget import QAeroChartDockWidget
 from .vertical_scale_dialog import VerticalScaleDockWidget
+from .horizontal_scale_dialog import HorizontalScaleDockWidget
 from .utils.logger import log
 from .utils.qt_compat import Qt
 import os.path
@@ -99,6 +100,8 @@ class QAeroChart:
         # Vertical scale dock (Issue #57 standalone)
         self.vertical_scale_dock = None
         self.vertical_scale_action = None
+        # Distance/Altitude Table dialog (Issue #68: non-blocking, kept alive)
+        self._distance_dialog = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -221,6 +224,16 @@ class QAeroChart:
         self.vertical_scale_action.triggered.connect(self.open_vertical_scale_dock)
         self.tools_toolbar.addAction(self.vertical_scale_action)
 
+        # Horizontal Scale action (Issue #69)
+        hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_horizontal_scale.svg')
+        if not os.path.exists(hs_icon_path):
+            hs_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon.png')
+        self.horizontal_scale_action = QAction(QIcon(hs_icon_path), self.tr('Horizontal Scale'), self.iface.mainWindow())
+        self.horizontal_scale_action.setObjectName('qAeroChartHorizontalScaleAction')
+        self.horizontal_scale_action.setStatusTip(self.tr('Create horizontal scale (meters/feet)'))
+        self.horizontal_scale_action.triggered.connect(self.open_horizontal_scale_dock)
+        self.tools_toolbar.addAction(self.horizontal_scale_action)
+
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
         try:
             menu_bar = self.iface.mainWindow().menuBar()
@@ -229,6 +242,7 @@ class QAeroChart:
             # Add our primary action
             self.top_menu.addAction(self.generate_profile_action)
             self.top_menu.addAction(self.vertical_scale_action)
+            self.top_menu.addAction(self.horizontal_scale_action)
 
             # Try to position it right after qPANSOPY
             inserted = False
@@ -350,6 +364,16 @@ class QAeroChart:
             self.vertical_scale_dock = None
             self.vertical_scale_action = None
 
+        # Close horizontal scale dock
+        if self.horizontal_scale_dock:
+            try:
+                self.iface.removeDockWidget(self.horizontal_scale_dock)
+                self.horizontal_scale_dock.deleteLater()
+            except Exception:
+                pass
+            self.horizontal_scale_dock = None
+            self.horizontal_scale_action = None
+
         # Clean up tool manager
         if self.tool_manager:
             self.tool_manager.cleanup()
@@ -399,12 +423,18 @@ class QAeroChart:
         return None
 
     def _open_distance_table_builder(self):
-        """Launch the distance/altitude table builder dialog and insert the table."""
+        """Launch the distance/altitude table builder dialog (issue #68: non-blocking)."""
 
         try:
             from .scripts import table_distance_altitude
         except Exception as exc:
             print(f"PLUGIN qAeroChart ERROR: Cannot import table builder: {exc}")
+            return
+
+        # If dialog already open, just bring it to front
+        if self._distance_dialog is not None and self._distance_dialog.isVisible():
+            self._distance_dialog.raise_()
+            self._distance_dialog.activateWindow()
             return
 
         default_layout = self._active_layout_name()
@@ -424,12 +454,20 @@ class QAeroChart:
                     self._attach_action_to_designer(designer)
             except Exception:
                 parent_window = None
+        # parent_window stays None when no layout designer is open so the
+        # dialog floats independently (centered on screen, not over the map).
 
-        try:
-            table_distance_altitude.run(self.iface, default_layout_name=default_layout, parent_window=parent_window)
-        except TypeError:
-            # Fallback for environments that still have the older signature
-            table_distance_altitude.run(self.iface, default_layout_name=default_layout)
+        dlg = table_distance_altitude.build_dialog(
+            iface=self.iface,
+            parent=parent_window,
+            default_layout_name=default_layout,
+        )
+        dlg.accepted.connect(lambda: table_distance_altitude.insert_from_dialog(dlg, self.iface))
+        dlg.finished.connect(lambda _: setattr(self, '_distance_dialog', None))
+        self._distance_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _on_layout_designer_opened(self, designer_iface):
         """Ensure our action appears in the layout designer toolbar when a composition opens."""
@@ -480,42 +518,45 @@ class QAeroChart:
     # --------------------------------------------------------------------------
 
     def run(self):
-        """Run method that loads and starts the plugin"""
+        """Toggle the Generate Profile dock (issue #67: clicking icon closes if already open)."""
 
-        if not self.pluginIsActive:
-            self.pluginIsActive = True
-
+        # First-time creation
+        if self.dockwidget is None:
             log("Starting...")
-
-            # dockwidget may not exist if:
-            #    first run of plugin
-            #    removed on close (see self.onClosePlugin method)
-            if self.dockwidget is None:
-                # Create the dockwidget (after translation) and keep reference
-                self.dockwidget = QAeroChartDockWidget(
-                    iface=self.iface, controller=self._controller
-                )
-
-            # Pass tool manager (draw tool lives outside the controller)
+            self.pluginIsActive = True
+            self.dockwidget = QAeroChartDockWidget(
+                iface=self.iface, controller=self._controller
+            )
             self.dockwidget.tool_manager = self.tool_manager
-
-            # connect to provide cleanup on closing of dockwidget
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)
-
-            # show the dockwidget
-            # TODO: fix to allow choice of dock location
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
             self.dockwidget.show()
+            return
+
+        # Toggle: hide if visible, show if hidden
+        if self.dockwidget.isVisible():
+            self.dockwidget.hide()
+            self.pluginIsActive = False
+        else:
+            self.pluginIsActive = True
+            self.dockwidget.show()
+            self.dockwidget.raise_()
 
     def open_vertical_scale_dock(self) -> None:
-        """Open (or raise) the standalone Vertical Scale dock widget."""
+        """Toggle the Vertical Scale dock (issue #67: clicking icon closes if already open)."""
         try:
             if self.vertical_scale_dock is None:
                 self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+                self.vertical_scale_dock.show()
+                return
+
+            # Toggle: hide if visible, show if hidden
+            if self.vertical_scale_dock.isVisible():
+                self.vertical_scale_dock.hide()
             else:
                 self.vertical_scale_dock.show_menu()
-            self.vertical_scale_dock.show()
-            self.vertical_scale_dock.raise_()
+                self.vertical_scale_dock.show()
+                self.vertical_scale_dock.raise_()
         except Exception as e:
-            log(f"Could not open Vertical Scale dock: {e}", "ERROR")
+            log(f"Could not toggle Vertical Scale dock: {e}", "ERROR")

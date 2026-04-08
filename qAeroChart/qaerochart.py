@@ -100,6 +100,9 @@ class QAeroChart:
         # Vertical scale dock (Issue #57 standalone)
         self.vertical_scale_dock = None
         self.vertical_scale_action = None
+        # Horizontal scale dock (Issue #69)
+        self.horizontal_scale_dock = None
+        self.horizontal_scale_action = None
         # Distance/Altitude Table dialog (Issue #68: non-blocking, kept alive)
         self._distance_dialog = None
 
@@ -560,3 +563,21 @@ class QAeroChart:
                 self.vertical_scale_dock.raise_()
         except Exception as e:
             log(f"Could not toggle Vertical Scale dock: {e}", "ERROR")
+
+    def open_horizontal_scale_dock(self) -> None:
+        """Toggle the Horizontal Scale dock (issue #69)."""
+        try:
+            if self.horizontal_scale_dock is None:
+                self.horizontal_scale_dock = HorizontalScaleDockWidget(self.iface.mainWindow())
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self.horizontal_scale_dock)
+                self.horizontal_scale_dock.show()
+                return
+
+            # Toggle: hide if visible, show if hidden
+            if self.horizontal_scale_dock.isVisible():
+                self.horizontal_scale_dock.hide()
+            else:
+                self.horizontal_scale_dock.show()
+                self.horizontal_scale_dock.raise_()
+        except Exception as e:
+            log(f"Could not toggle Horizontal Scale dock: {e}", "ERROR")

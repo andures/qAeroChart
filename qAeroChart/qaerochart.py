@@ -82,8 +82,10 @@ class QAeroChart:
 
         # Layer manager (will be initialized in initGui)
         self.layer_manager = None
-        # Layout toolbar action
+        # Layout toolbar actions
         self.distance_table_action = None
+        self.oca_h_table_action = None
+        self._oca_h_dialog = None
         self._layout_toolbar_hooked = False
 
         # Profile controller (will be initialized in initGui)
@@ -298,6 +300,22 @@ class QAeroChart:
                 self.top_menu.addAction(self.gs_rod_action)
         except Exception:
             pass
+
+        # OCA/H table toolbar action
+        oca_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_oca_h_table.svg')
+        self.oca_h_table_action = QAction(
+            QIcon(oca_icon_path),
+            self.tr('Add OCA/H Table'),
+            self.iface.mainWindow(),
+        )
+        self.oca_h_table_action.setObjectName('qAeroChartOcaHTableAction')
+        self.oca_h_table_action.setStatusTip(self.tr('Insert an OCA/H table into the active layout'))
+        self.oca_h_table_action.triggered.connect(self._open_oca_h_table_builder)
+        try:
+            if self.top_menu:
+                self.top_menu.addAction(self.oca_h_table_action)
+        except Exception:
+            pass
         
         # Initialize map tool manager — wrapped in try/except so a failure here
         # does NOT prevent layer_manager / controller from initialising (the
@@ -406,13 +424,20 @@ class QAeroChart:
             # self.layer_manager.remove_all_layers()
             self.layer_manager = None
 
-        # Remove layout toolbar action
+        # Remove layout toolbar actions
         if self.distance_table_action:
             try:
                 self.iface.removeLayoutDesignerToolBarIcon(self.distance_table_action)
             except Exception:
                 pass
             self.distance_table_action = None
+        if self.oca_h_table_action:
+            try:
+                self.iface.removeLayoutDesignerToolBarIcon(self.oca_h_table_action)
+            except Exception:
+                pass
+            self.oca_h_table_action = None
+        self._oca_h_dialog = None
         if self._layout_toolbar_hooked:
             try:
                 self.iface.layoutDesignerOpened.disconnect(self._on_layout_designer_opened)
@@ -443,6 +468,40 @@ class QAeroChart:
         except Exception:
             pass
         return None
+
+    def _open_oca_h_table_builder(self):
+        """Launch the OCA/H table builder dialog (issue #74: non-blocking)."""
+        try:
+            from .scripts import table_oca_h
+        except Exception as exc:
+            print(f"PLUGIN qAeroChart ERROR: Cannot import OCA/H table builder: {exc}")
+            return
+
+        if self._oca_h_dialog is not None and self._oca_h_dialog.isVisible():
+            self._oca_h_dialog.raise_()
+            self._oca_h_dialog.activateWindow()
+            return
+
+        default_layout = self._active_layout_name()
+        parent_window = None
+        try:
+            designer = self.iface.activeLayoutDesignerInterface()
+            if designer is not None:
+                parent_window = designer.window()
+        except Exception:
+            parent_window = None
+
+        dlg = table_oca_h.build_dialog(
+            iface=self.iface,
+            parent=parent_window,
+            default_layout_name=default_layout,
+        )
+        dlg.accepted.connect(lambda: table_oca_h.insert_from_dialog(dlg, self.iface))
+        dlg.finished.connect(lambda _: setattr(self, '_oca_h_dialog', None))
+        self._oca_h_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
     def _open_distance_table_builder(self):
         """Launch the distance/altitude table builder dialog (issue #68: non-blocking)."""

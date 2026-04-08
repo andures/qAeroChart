@@ -105,6 +105,9 @@ class QAeroChart:
         self.horizontal_scale_action = None
         # Distance/Altitude Table dialog (Issue #68: non-blocking, kept alive)
         self._distance_dialog = None
+        # GS/ROD Table dialog (Issue #73: non-blocking, kept alive)
+        self._gs_rod_dialog = None
+        self.gs_rod_action = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -268,6 +271,16 @@ class QAeroChart:
         except Exception as e:
             print(f"PLUGIN qAeroChart WARNING: Could not create top-level menu: {e}")
 
+        # GS/ROD Table action (Issue #73)
+        gs_rod_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_gs_rod_table.svg')
+        if not os.path.exists(gs_rod_icon_path):
+            gs_rod_icon_path = icon_path
+        self.gs_rod_action = QAction(QIcon(gs_rod_icon_path), self.tr('GS / Rate of Descent Table'), self.iface.mainWindow())
+        self.gs_rod_action.setObjectName('qAeroChartGsRodTableAction')
+        self.gs_rod_action.setStatusTip(self.tr('Create a Ground Speed / Rate of Descent table'))
+        self.gs_rod_action.triggered.connect(self._open_gs_rod_table_builder)
+        self.tools_toolbar.addAction(self.gs_rod_action)
+
         # Layout toolbar action: add distance/altitude table into print layout
         self.distance_table_action = QAction(QIcon(icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
         self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
@@ -282,6 +295,7 @@ class QAeroChart:
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.distance_table_action)
+                self.top_menu.addAction(self.gs_rod_action)
         except Exception:
             pass
         
@@ -406,6 +420,11 @@ class QAeroChart:
                 pass
             self._layout_toolbar_hooked = False
 
+        # Clean up GS/ROD dialog reference
+        self._gs_rod_dialog = None
+        if self.gs_rod_action:
+            self.gs_rod_action = None
+
     # --------------------------------------------------------------------------
 
     def _active_layout_name(self):
@@ -468,6 +487,33 @@ class QAeroChart:
         dlg.accepted.connect(lambda: table_distance_altitude.insert_from_dialog(dlg, self.iface))
         dlg.finished.connect(lambda _: setattr(self, '_distance_dialog', None))
         self._distance_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _open_gs_rod_table_builder(self) -> None:
+        """Launch the GS/Rate-of-Descent table builder dialog (issue #73)."""
+        try:
+            from .scripts import table_gs_rod
+        except Exception as exc:
+            print(f"PLUGIN qAeroChart ERROR: Cannot import GS/ROD table builder: {exc}")
+            return
+
+        # If dialog already open, just bring it to front
+        if self._gs_rod_dialog is not None and self._gs_rod_dialog.isVisible():
+            self._gs_rod_dialog.raise_()
+            self._gs_rod_dialog.activateWindow()
+            return
+
+        default_layout = self._active_layout_name()
+        dlg = table_gs_rod.build_dialog(
+            iface=self.iface,
+            parent=None,
+            default_layout_name=default_layout,
+        )
+        dlg.accepted.connect(lambda: table_gs_rod.insert_from_dialog(dlg, self.iface))
+        dlg.finished.connect(lambda _: setattr(self, '_gs_rod_dialog', None))
+        self._gs_rod_dialog = dlg
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()

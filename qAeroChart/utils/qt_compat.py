@@ -89,6 +89,11 @@ class _QtCompat:
         or _Qt.ItemFlag.ItemIsSelectable
     )
 
+    ItemIsEditable = (
+        getattr(_Qt, "ItemIsEditable", None)
+        or _Qt.ItemFlag.ItemIsEditable
+    )
+
     # Context menu policy -------------------------------------------------------
     CustomContextMenu = (
         getattr(_Qt, "CustomContextMenu", None)
@@ -173,6 +178,11 @@ class _QAbstractItemViewCompat:
     AllEditTriggers = (
         getattr(_QAbstractItemView, "AllEditTriggers", None)
         or _QAbstractItemView.EditTrigger.AllEditTriggers
+    )
+
+    NoEditTriggers = (
+        getattr(_QAbstractItemView, "NoEditTriggers", None)
+        or _QAbstractItemView.EditTrigger.NoEditTriggers
     )
 
 

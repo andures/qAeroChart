@@ -226,10 +226,13 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
 
     def _init_table(self):
         self._resize_table()
-        # Seed defaults — style sets cells (0,0) and (1,0); fill remaining header cells
+        # Seed defaults — apply the currently selected style so cells pick up
+        # top_left_text / first_col_text from the style config (Issue #71)
         self._apply_selected_style(seed_only=True)
         for col in range(1, self.table.columnCount()):
             self.table.setItem(0, col, QtWidgets.QTableWidgetItem(str(col)))
+        if self.table.rowCount() > 1:
+            self.table.setItem(1, 0, QtWidgets.QTableWidgetItem(self.line_row1_label.text()))
         # Auto-attach whichever layout is currently selected in the combo
         self._attach_current_layout()
 

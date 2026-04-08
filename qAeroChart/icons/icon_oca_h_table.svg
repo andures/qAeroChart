@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Table outline: 4 rows x 5 cols -->
+  <rect x="4" y="8" width="56" height="48" fill="none" stroke="#000" stroke-width="2"/>
+  <!-- Horizontal dividers -->
+  <line x1="4" y1="20" x2="60" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="4" y1="32" x2="60" y2="32" stroke="#000" stroke-width="2"/>
+  <line x1="4" y1="44" x2="60" y2="44" stroke="#000" stroke-width="2"/>
+  <!-- Vertical dividers -->
+  <line x1="22" y1="8" x2="22" y2="56" stroke="#000" stroke-width="2"/>
+  <line x1="33" y1="20" x2="33" y2="56" stroke="#000" stroke-width="2"/>
+  <line x1="44" y1="20" x2="44" y2="56" stroke="#000" stroke-width="2"/>
+  <!-- Header labels -->
+  <text x="6"  y="18" font-size="7" font-weight="bold" fill="#000" font-family="Arial">OCA</text>
+  <text x="24" y="18" font-size="7" font-weight="bold" fill="#000" font-family="Arial">A  B</text>
+  <text x="45" y="18" font-size="7" font-weight="bold" fill="#000" font-family="Arial">C D</text>
+</svg>

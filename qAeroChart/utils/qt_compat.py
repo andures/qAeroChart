@@ -89,6 +89,11 @@ class _QtCompat:
         or _Qt.ItemFlag.ItemIsSelectable
     )
 
+    ItemIsEditable = (
+        getattr(_Qt, "ItemIsEditable", None)
+        or _Qt.ItemFlag.ItemIsEditable
+    )
+
     # Context menu policy -------------------------------------------------------
     CustomContextMenu = (
         getattr(_Qt, "CustomContextMenu", None)

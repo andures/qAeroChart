@@ -175,6 +175,11 @@ class _QAbstractItemViewCompat:
         or _QAbstractItemView.EditTrigger.AllEditTriggers
     )
 
+    NoEditTriggers = (
+        getattr(_QAbstractItemView, "NoEditTriggers", None)
+        or _QAbstractItemView.EditTrigger.NoEditTriggers
+    )
+
 
 QAbstractItemView = _QAbstractItemViewCompat
 

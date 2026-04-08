@@ -27,7 +27,7 @@ from qgis.core import (
     QgsLayoutFrame,
     QgsPrintLayout,
 )
-from qAeroChart.utils.qt_compat import QgsUnitTypes
+from qAeroChart.utils.qt_compat import QgsUnitTypes, Qt
 from qAeroChart.ui.gs_rod_dialog import GsRodTableDialog
 
 TABLE_NAME = "gs_rod_table"
@@ -57,6 +57,50 @@ def _calc_column_widths(
     return [first_col_width] + [dynamic_col_width] * dynamic_cols
 
 
+def _classify_rows(table_rows: list[list[str]]) -> list[str]:
+    """Classify each row as 'title', 'header', 'data', or 'footer'."""
+    header_idx = None
+    for i, row in enumerate(table_rows):
+        if len(row) > 2 and any(row[j] for j in range(2, len(row))):
+            header_idx = i
+            break
+    types = []
+    for i, row in enumerate(table_rows):
+        is_span = len(row) > 1 and all(c == "" for c in row[1:])
+        if is_span:
+            types.append("footer" if header_idx is not None and i > header_idx else "title")
+        elif i == header_idx:
+            types.append("header")
+        else:
+            types.append("data")
+    return types
+
+
+def _build_styled_cells(
+    table_rows: list[list[str]], font_family: str, font_size: float
+) -> list[list[QgsTableCell]]:
+    """Return a grid of QgsTableCell with bold and alignment applied."""
+    row_types = _classify_rows(table_rows)
+    styled = []
+    for r, row in enumerate(table_rows):
+        rtype = row_types[r]
+        styled_row = []
+        for c, val in enumerate(row):
+            cell = QgsTableCell(val)
+            fmt = QgsTextFormat()
+            font = QFont(font_family)
+            if rtype == "title" or (rtype == "header" and c >= 2):
+                font.setBold(True)
+            fmt.setFont(font)
+            fmt.setSize(font_size)
+            cell.setTextFormat(fmt)
+            if rtype == "title" or c >= 1:
+                cell.setHorizontalAlignment(Qt.AlignHCenter)
+            styled_row.append(cell)
+        styled.append(styled_row)
+    return styled
+
+
 def _get_or_create_layout(name: str, project):
     manager = project.layoutManager()
     for lyt in manager.layouts():
@@ -78,7 +122,7 @@ def _remove_existing_table(layout) -> None:
 
 def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
     t = QgsLayoutItemManualTable.create(layout)
-    t.setTableContents([[QgsTableCell(cell) for cell in row] for row in table_rows])
+    t.setTableContents(_build_styled_cells(table_rows, cfg["font_family"], cfg["font_size"]))
     t.setGridStrokeWidth(cfg["stroke"])
     try:
         t.setCellMargin(cfg["cell_margin"])

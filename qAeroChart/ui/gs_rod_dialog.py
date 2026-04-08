@@ -280,10 +280,20 @@ class GsRodTableDialog(QtWidgets.QDialog):
         self.table.setRowCount(n_rows)
         self.table.setColumnCount(n_cols)
         self.table.horizontalHeader().setVisible(False)
+        title_rows = 1 if cfg.title else 0
+        header_row_idx = title_rows
         for r, row in enumerate(rows):
+            is_title = r < title_rows
+            is_header = r == header_row_idx
             for c, val in enumerate(row):
                 item = QtWidgets.QTableWidgetItem(val)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if is_title or (is_header and c >= 2):
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                if is_title or c >= 1:
+                    item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(r, c, item)
         self.table.resizeColumnsToContents()
 

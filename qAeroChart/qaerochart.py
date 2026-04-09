@@ -87,6 +87,8 @@ class QAeroChart:
         self.oca_h_table_action = None
         self._oca_h_dialog = None
         self._layout_toolbar_hooked = False
+        self._layout_toolbars: list = []        # per-designer QToolBar instances (#87)
+        self._layout_toolbar_windows: set = set()  # ids of windows already attached
 
         # Profile controller (will be initialized in initGui)
         self._profile_manager = None
@@ -284,10 +286,14 @@ class QAeroChart:
         self.tools_toolbar.addAction(self.gs_rod_action)
 
         # Layout toolbar action: add distance/altitude table into print layout
-        self.distance_table_action = QAction(QIcon(icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
+        dat_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_distance_table.svg')
+        if not os.path.exists(dat_icon_path):
+            dat_icon_path = icon_path
+        self.distance_table_action = QAction(QIcon(dat_icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
         self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
         self.distance_table_action.setStatusTip(self.tr('Insert a distance/altitude table into the active layout'))
         self.distance_table_action.triggered.connect(self._open_distance_table_builder)
+        self.tools_toolbar.addAction(self.distance_table_action)
         # Also hook into layout-designer openings to force-add the action to their toolbars
         try:
             self.iface.layoutDesignerOpened.connect(self._on_layout_designer_opened)
@@ -311,6 +317,7 @@ class QAeroChart:
         self.oca_h_table_action.setObjectName('qAeroChartOcaHTableAction')
         self.oca_h_table_action.setStatusTip(self.tr('Insert an OCA/H table into the active layout'))
         self.oca_h_table_action.triggered.connect(self._open_oca_h_table_builder)
+        self.tools_toolbar.addAction(self.oca_h_table_action)
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.oca_h_table_action)
@@ -423,6 +430,16 @@ class QAeroChart:
             # Uncomment to remove layers on plugin unload:
             # self.layer_manager.remove_all_layers()
             self.layer_manager = None
+
+        # Remove per-designer qAeroChart toolbars (issue #87)
+        for toolbar in self._layout_toolbars:
+            try:
+                toolbar.hide()
+                toolbar.deleteLater()
+            except Exception:
+                pass
+        self._layout_toolbars.clear()
+        self._layout_toolbar_windows.clear()
 
         # Remove layout toolbar actions
         if self.distance_table_action:
@@ -585,25 +602,12 @@ class QAeroChart:
         except Exception as exc:
             print(f"PLUGIN qAeroChart WARNING: Could not attach action to layout designer: {exc}")
 
-    def _attach_action_to_designer(self, designer_iface):
-        if self.distance_table_action is None or designer_iface is None:
+    def _attach_action_to_designer(self, designer_iface) -> None:
+        """Create a dedicated 'qAeroChart tools' toolbar in the Layout Designer
+        window (issues #85, #86, #87).  Called once per designer instance.
+        """
+        if designer_iface is None:
             return
-
-        # Preferred: use designer interface API (QGIS 3.x): add to tools toolbar
-        try:
-            add_method = getattr(designer_iface, 'addActionToToolbar', None)
-            if callable(add_method):
-                add_method(self.distance_table_action, 'mLayoutDesignerToolsToolbar')
-                return
-        except Exception:
-            pass
-
-        # Fallback: scan toolbars in the designer window
-        target_names = {
-            'mLayoutDesignerToolsToolbar',
-            'mLayoutDesignerAddItemsToolbar',
-            'mLayoutDesignerToolbar'
-        }
 
         window = getattr(designer_iface, 'window', None)
         if callable(window):
@@ -611,17 +615,21 @@ class QAeroChart:
         if not window:
             return
 
-        toolbars = window.findChildren(QToolBar)
-        chosen = None
-        for bar in toolbars:
-            if bar.objectName() in target_names:
-                chosen = bar
-                break
-        if chosen is None and toolbars:
-            chosen = toolbars[0]
+        # Guard: avoid creating a second toolbar if already attached to this window
+        win_id = id(window)
+        if win_id in self._layout_toolbar_windows:
+            return
 
-        if chosen and self.distance_table_action not in chosen.actions():
-            chosen.addAction(self.distance_table_action)
+        toolbar = QToolBar(self.tr('qAeroChart tools'), window)
+        toolbar.setObjectName('qAeroChartLayoutToolbar')
+
+        for action in (self.distance_table_action, self.gs_rod_action, self.oca_h_table_action):
+            if action is not None:
+                toolbar.addAction(action)
+
+        window.addToolBar(toolbar)
+        self._layout_toolbars.append(toolbar)
+        self._layout_toolbar_windows.add(win_id)
 
     # --------------------------------------------------------------------------
 

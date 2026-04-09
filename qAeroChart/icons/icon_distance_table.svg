@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Table outline: 4 rows x 4 cols -->
+  <rect x="4" y="8" width="56" height="48" fill="none" stroke="#000" stroke-width="2"/>
+  <!-- Horizontal dividers -->
+  <line x1="4" y1="20" x2="60" y2="20" stroke="#000" stroke-width="2"/>
+  <line x1="4" y1="32" x2="60" y2="32" stroke="#000" stroke-width="2"/>
+  <line x1="4" y1="44" x2="60" y2="44" stroke="#000" stroke-width="2"/>
+  <!-- Vertical dividers -->
+  <line x1="22" y1="8" x2="22" y2="56" stroke="#000" stroke-width="2"/>
+  <line x1="41" y1="8" x2="41" y2="56" stroke="#000" stroke-width="2"/>
+  <!-- Title row -->
+  <text x="32" y="17" font-size="7" font-weight="bold" fill="#000" font-family="Arial" text-anchor="middle">D / Alt</text>
+  <!-- Header labels -->
+  <text x="13" y="30" font-size="7" font-weight="bold" fill="#000" font-family="Arial" text-anchor="middle">NM</text>
+  <text x="31" y="30" font-size="7" font-weight="bold" fill="#000" font-family="Arial" text-anchor="middle">ft</text>
+  <text x="50" y="30" font-size="7" font-weight="bold" fill="#000" font-family="Arial" text-anchor="middle">m</text>
+  <!-- Data row 1: arrow indicating ascending altitude -->
+  <text x="13" y="41" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">0.0</text>
+  <text x="31" y="41" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">400</text>
+  <text x="50" y="41" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">120</text>
+  <!-- Data row 2 -->
+  <text x="13" y="53" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">1.5</text>
+  <text x="31" y="53" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">700</text>
+  <text x="50" y="53" font-size="6" fill="#000" font-family="Arial" text-anchor="middle">213</text>
+</svg>

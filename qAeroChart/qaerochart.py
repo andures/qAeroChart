@@ -293,6 +293,7 @@ class QAeroChart:
         self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
         self.distance_table_action.setStatusTip(self.tr('Insert a distance/altitude table into the active layout'))
         self.distance_table_action.triggered.connect(self._open_distance_table_builder)
+        self.tools_toolbar.addAction(self.distance_table_action)
         # Also hook into layout-designer openings to force-add the action to their toolbars
         try:
             self.iface.layoutDesignerOpened.connect(self._on_layout_designer_opened)
@@ -316,6 +317,7 @@ class QAeroChart:
         self.oca_h_table_action.setObjectName('qAeroChartOcaHTableAction')
         self.oca_h_table_action.setStatusTip(self.tr('Insert an OCA/H table into the active layout'))
         self.oca_h_table_action.triggered.connect(self._open_oca_h_table_builder)
+        self.tools_toolbar.addAction(self.oca_h_table_action)
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.oca_h_table_action)

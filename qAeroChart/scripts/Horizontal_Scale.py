@@ -295,7 +295,8 @@ def run_horizontal_scale(
     root = QgsProject.instance().layerTreeRoot()
     group = root.findGroup(name)
     if group is None:
-        group = root.addGroup(name)
+        root.insertGroup(0, name)  # insert at top (#88)
+        group = root.findGroup(name)
     QgsProject.instance().addMapLayer(line_layer, False)
     QgsProject.instance().addMapLayer(label_layer, False)
     group.addLayer(line_layer)

@@ -286,7 +286,10 @@ class QAeroChart:
         self.tools_toolbar.addAction(self.gs_rod_action)
 
         # Layout toolbar action: add distance/altitude table into print layout
-        self.distance_table_action = QAction(QIcon(icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
+        dat_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_distance_table.svg')
+        if not os.path.exists(dat_icon_path):
+            dat_icon_path = icon_path
+        self.distance_table_action = QAction(QIcon(dat_icon_path), self.tr('Add Distance/Altitude Table'), self.iface.mainWindow())
         self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
         self.distance_table_action.setStatusTip(self.tr('Insert a distance/altitude table into the active layout'))
         self.distance_table_action.triggered.connect(self._open_distance_table_builder)

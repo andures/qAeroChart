@@ -277,7 +277,8 @@ def run_vertical_scale(
     group_name = name if name else "Vertical Scale"
     group = root.findGroup(group_name)
     if group is None:
-        group = root.addGroup(group_name)
+        root.insertGroup(0, group_name)  # insert at top (#88)
+        group = root.findGroup(group_name)
     QgsProject.instance().addMapLayer(line_layer, False)
     QgsProject.instance().addMapLayer(label_layer, False)
     group.addLayer(line_layer)

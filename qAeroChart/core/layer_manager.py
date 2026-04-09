@@ -1350,7 +1350,8 @@ class LayerManager:
             root = project.layerTreeRoot()
             group = root.findGroup(name)
             if group is None:
-                group = root.addGroup(name)
+                root.insertGroup(0, name)  # insert at top (#88)
+                group = root.findGroup(name)
             project.addMapLayer(lines_layer, False)
             project.addMapLayer(labels_layer, False)
             group.addLayer(lines_layer)
@@ -1648,7 +1649,8 @@ class LayerManager:
             root = project.layerTreeRoot()
             group = root.findGroup(name)
             if group is None:
-                group = root.addGroup(name)
+                root.insertGroup(0, name)  # insert at top (#88)
+                group = root.findGroup(name)
             project.addMapLayer(lines_layer, False)
             project.addMapLayer(labels_layer, False)
             group.addLayer(lines_layer)

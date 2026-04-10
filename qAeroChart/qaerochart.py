@@ -283,7 +283,8 @@ class QAeroChart:
         self.gs_rod_action.setObjectName('qAeroChartGsRodTableAction')
         self.gs_rod_action.setStatusTip(self.tr('Create a Ground Speed / Rate of Descent table'))
         self.gs_rod_action.triggered.connect(self._open_gs_rod_table_builder)
-        self.tools_toolbar.addAction(self.gs_rod_action)
+        # gs_rod_action is available via the top menu and the Layout Designer toolbar;
+        # it is intentionally NOT added to the map canvas toolbar (#91)
 
         # Layout toolbar action: add distance/altitude table into print layout
         dat_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_distance_table.svg')
@@ -293,7 +294,8 @@ class QAeroChart:
         self.distance_table_action.setObjectName('qAeroChartDistanceTableAction')
         self.distance_table_action.setStatusTip(self.tr('Insert a distance/altitude table into the active layout'))
         self.distance_table_action.triggered.connect(self._open_distance_table_builder)
-        self.tools_toolbar.addAction(self.distance_table_action)
+        # distance_table_action is available via the top menu and the Layout Designer toolbar;
+        # it is intentionally NOT added to the map canvas toolbar (#91)
         # Also hook into layout-designer openings to force-add the action to their toolbars
         try:
             self.iface.layoutDesignerOpened.connect(self._on_layout_designer_opened)
@@ -317,7 +319,8 @@ class QAeroChart:
         self.oca_h_table_action.setObjectName('qAeroChartOcaHTableAction')
         self.oca_h_table_action.setStatusTip(self.tr('Insert an OCA/H table into the active layout'))
         self.oca_h_table_action.triggered.connect(self._open_oca_h_table_builder)
-        self.tools_toolbar.addAction(self.oca_h_table_action)
+        # oca_h_table_action is available via the top menu and the Layout Designer toolbar;
+        # it is intentionally NOT added to the map canvas toolbar (#91)
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.oca_h_table_action)

@@ -24,7 +24,6 @@ class GsRodTableDialog(QtWidgets.QDialog):
         self.iface = iface
         self.setWindowTitle("GS / Rate of Descent Table")
         self.setWindowModality(Qt.NonModal)
-        self.setModal(False)
         self.resize(760, 540)
         self._build_ui()
         self._refresh_preview()

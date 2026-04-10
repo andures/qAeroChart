@@ -33,6 +33,22 @@ from qAeroChart.utils.qt_compat import QgsUnitTypes
 from qAeroChart.ui.distance_altitude_table_dialog import DistanceAltitudeTableDialog
 
 TABLE_NAME = "distance_altitude_table"
+TABLE_ID_PREFIX = "distance_table_"
+
+
+def _next_table_id(layout, prefix: str) -> str:
+    """Return the next sequential item ID for *prefix* in *layout*."""
+    max_n = 0
+    for item in layout.items():
+        try:
+            item_id = item.id()
+            if item_id.startswith(prefix):
+                n = int(item_id[len(prefix):])
+                if n > max_n:
+                    max_n = n
+        except (AttributeError, ValueError):
+            pass
+    return f"{prefix}{max_n + 1:03d}"
 
 
 def _calc_column_widths(total_width, first_col_width, num_columns, stroke_width, cell_margin):
@@ -66,10 +82,9 @@ def _get_or_create_layout(name, project):
 
 
 def _remove_existing_table(layout):
-    for item in layout.items():
-        if hasattr(item, "customProperty") and item.customProperty("name") == TABLE_NAME:
-            layout.removeLayoutItem(item)
-            break
+    for mf in list(layout.multiFrames()):
+        if hasattr(mf, "customProperty") and mf.customProperty("name") == TABLE_NAME:
+            layout.removeMultiFrame(mf)
 
 
 def _build_table(table_rows, cfg, layout):
@@ -130,6 +145,14 @@ def _build_table(table_rows, cfg, layout):
         QgsLayoutSize(cfg["total_width"], computed_height, QgsUnitTypes.LayoutMillimeters)
     )
     frame.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
+
+    item_id = _next_table_id(layout, TABLE_ID_PREFIX)
+    frame.setId(item_id)
+    try:
+        frame.setDisplayName(item_id)
+    except Exception:
+        pass
+
     t.addFrame(frame)
 
     return t
@@ -159,12 +182,9 @@ def insert_from_dialog(dlg, iface=None):
         cfg = {**cfg, "layout_name": layout_name}
     project = QgsProject.instance()
     layout = _get_or_create_layout(layout_name, project)
-    try:
-        dlg.set_layout(layout)
-    except Exception:
-        pass
     _remove_existing_table(layout)
     _build_table(table_rows, cfg, layout)
+    layout.refresh()
     if iface:
         iface.messageBar().pushInfo(
             "Distance/Altitude",

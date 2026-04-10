@@ -28,11 +28,27 @@ from qAeroChart.ui.oca_h_dialog import OcaHTableDialog
 from qAeroChart.utils.qt_compat import Qt, QgsUnitTypes
 
 TABLE_NAME = "oca_h_table"
+TABLE_ID_PREFIX = "oca_table_"
 
 
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
+def _next_table_id(layout, prefix: str) -> str:
+    """Return the next sequential item ID for *prefix* in *layout*."""
+    max_n = 0
+    for item in layout.items():
+        try:
+            item_id = item.id()
+            if item_id.startswith(prefix):
+                n = int(item_id[len(prefix):])
+                if n > max_n:
+                    max_n = n
+        except (AttributeError, ValueError):
+            pass
+    return f"{prefix}{max_n + 1:03d}"
+
 
 def _calc_column_widths(
     total_width: float,
@@ -109,10 +125,9 @@ def _get_or_create_layout(name: str, project) -> QgsPrintLayout:
 
 
 def _remove_existing_table(layout) -> None:
-    for item in layout.items():
-        if hasattr(item, "customProperty") and item.customProperty("name") == TABLE_NAME:
-            layout.removeLayoutItem(item)
-            break
+    for mf in list(layout.multiFrames()):
+        if hasattr(mf, "customProperty") and mf.customProperty("name") == TABLE_NAME:
+            layout.removeMultiFrame(mf)
 
 
 def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
@@ -125,6 +140,11 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
         pass
     t.setGridColor(QColor(0, 0, 0, 255))
     t.setCustomProperty("name", TABLE_NAME)
+
+    text_format = QgsTextFormat()
+    text_format.setFont(QFont(cfg["font_family"]))
+    text_format.setSize(cfg["font_size"])
+    t.setContentTextFormat(text_format)
 
     layout.addMultiFrame(t)
 
@@ -170,6 +190,14 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
     frame.attemptMove(
         QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters)
     )
+
+    item_id = _next_table_id(layout, TABLE_ID_PREFIX)
+    frame.setId(item_id)
+    try:
+        frame.setDisplayName(item_id)
+    except Exception:
+        pass
+
     t.addFrame(frame)
 
 
@@ -197,6 +225,7 @@ def insert_from_dialog(dlg: OcaHTableDialog, iface=None) -> None:
     layout = _get_or_create_layout(layout_name, project)
     _remove_existing_table(layout)
     _build_table(table_rows, cfg, layout)
+    layout.refresh()
     n_data = len(table_rows)
     if iface:
         iface.messageBar().pushInfo(

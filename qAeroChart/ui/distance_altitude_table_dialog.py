@@ -18,7 +18,6 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.setWindowTitle("Distance/Altitude Table")
         # Non-modal so the layout window does not minimize
         self.setWindowModality(Qt.NonModal)
-        self.setModal(False)
         self.resize(720, 560)
         self._style_manager = TableStyleManager()
         self._build_ui()
@@ -261,8 +260,10 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         try:
             from qgis.core import QgsLayoutItemManualTable, QgsLayoutFrame
 
-            items = self._layout.items()
-            tables = [it for it in items if isinstance(it, QgsLayoutItemManualTable)]
+            tables = [
+                mf for mf in self._layout.multiFrames()
+                if isinstance(mf, QgsLayoutItemManualTable)
+            ]
             if not tables:
                 self.combo_existing.addItem("(no tables in layout)")
                 return
@@ -403,6 +404,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
                 self.combo_layouts.addItem("(no layouts found)")
         except Exception:
             self.combo_layouts.addItem("(no layouts found)")
+        self._attach_current_layout()
 
     def _load_json(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Table JSON", "", "JSON Files (*.json)")

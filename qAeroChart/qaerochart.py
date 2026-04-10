@@ -486,6 +486,18 @@ class QAeroChart:
             pass
         return None
 
+    def _safe_insert(self, insert_fn, dlg) -> None:
+        """Call *insert_fn* and catch errors so a failed insert never crashes the plugin."""
+        try:
+            insert_fn(dlg, self.iface)
+        except Exception as exc:
+            try:
+                self.iface.messageBar().pushCritical(
+                    "qAeroChart", f"Table insert failed: {exc}",
+                )
+            except Exception:
+                print(f"PLUGIN qAeroChart ERROR: Table insert failed: {exc}")
+
     def _open_oca_h_table_builder(self):
         """Launch the OCA/H table builder dialog (issue #74: non-blocking)."""
         try:
@@ -513,7 +525,7 @@ class QAeroChart:
             parent=parent_window,
             default_layout_name=default_layout,
         )
-        dlg.accepted.connect(lambda: table_oca_h.insert_from_dialog(dlg, self.iface))
+        dlg.accepted.connect(lambda: self._safe_insert(table_oca_h.insert_from_dialog, dlg))
         dlg.finished.connect(lambda _: setattr(self, '_oca_h_dialog', None))
         self._oca_h_dialog = dlg
         dlg.show()
@@ -560,7 +572,7 @@ class QAeroChart:
             parent=parent_window,
             default_layout_name=default_layout,
         )
-        dlg.accepted.connect(lambda: table_distance_altitude.insert_from_dialog(dlg, self.iface))
+        dlg.accepted.connect(lambda: self._safe_insert(table_distance_altitude.insert_from_dialog, dlg))
         dlg.finished.connect(lambda _: setattr(self, '_distance_dialog', None))
         self._distance_dialog = dlg
         dlg.show()
@@ -582,12 +594,20 @@ class QAeroChart:
             return
 
         default_layout = self._active_layout_name()
+        parent_window = None
+        try:
+            designer = self.iface.activeLayoutDesignerInterface()
+            if designer is not None:
+                parent_window = designer.window()
+        except Exception:
+            parent_window = None
+
         dlg = table_gs_rod.build_dialog(
             iface=self.iface,
-            parent=None,
+            parent=parent_window,
             default_layout_name=default_layout,
         )
-        dlg.accepted.connect(lambda: table_gs_rod.insert_from_dialog(dlg, self.iface))
+        dlg.accepted.connect(lambda: self._safe_insert(table_gs_rod.insert_from_dialog, dlg))
         dlg.finished.connect(lambda _: setattr(self, '_gs_rod_dialog', None))
         self._gs_rod_dialog = dlg
         dlg.show()

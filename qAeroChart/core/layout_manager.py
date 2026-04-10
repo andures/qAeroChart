@@ -25,6 +25,7 @@ from .distance_altitude_table import build_table_rows, compute_column_widths, ex
 
 # Layout-item custom property that identifies the table so it can be replaced
 _TABLE_PROPERTY = "distance_altitude_table"
+_TABLE_ID_PREFIX = "distance_table_"
 
 # Frame geometry (mm) — taken directly from the original script
 _TOTAL_WIDTH_MM = 180.20
@@ -47,6 +48,21 @@ class LayoutManager:
 
     # Name used when a new layout must be created
     LAYOUT_NAME = "AeroChart"
+
+    @staticmethod
+    def _next_table_id(layout, prefix: str) -> str:
+        """Return the next sequential item ID for *prefix* in *layout*."""
+        max_n = 0
+        for item in layout.items():
+            try:
+                item_id = item.id()
+                if item_id.startswith(prefix):
+                    n = int(item_id[len(prefix):])
+                    if n > max_n:
+                        max_n = n
+            except (AttributeError, ValueError):
+                pass
+        return f"{prefix}{max_n + 1:03d}"
 
     def get_or_create_layout(self) -> QgsPrintLayout:
         """Return the first existing print layout or create one called ``AeroChart``.
@@ -94,14 +110,13 @@ class LayoutManager:
         layout = self.get_or_create_layout()
 
         # Remove existing table (if any) so re-running is idempotent
-        for item in layout.items():
+        for mf in list(layout.multiFrames()):
             if (
-                hasattr(item, "customProperty")
-                and item.customProperty("name") == _TABLE_PROPERTY
+                hasattr(mf, "customProperty")
+                and mf.customProperty("name") == _TABLE_PROPERTY
             ):
-                layout.removeLayoutItem(item)
+                layout.removeMultiFrame(mf)
                 log("LayoutManager: removed existing distance_altitude_table")
-                break
 
         # Build the manual table
         t = QgsLayoutItemManualTable.create(layout)
@@ -143,7 +158,17 @@ class LayoutManager:
         frame.attemptMove(
             QgsLayoutPoint(_FRAME_X_MM, _FRAME_Y_MM, layout_unit)
         )
+
+        item_id = self._next_table_id(layout, _TABLE_ID_PREFIX)
+        frame.setId(item_id)
+        try:
+            frame.setDisplayName(item_id)
+        except Exception:
+            pass
+
         t.addFrame(frame)
+
+        layout.refresh()
 
         log(
             f"LayoutManager: table added ({len(numeric_columns)} numeric columns, "

@@ -32,7 +32,6 @@ class OcaHTableDialog(QtWidgets.QDialog):
         self.iface = iface
         self.setWindowTitle("OCA/H Table")
         self.setWindowModality(Qt.NonModal)
-        self.setModal(False)
         self.resize(800, 580)
         self._build_ui()
         self._populate_defaults()

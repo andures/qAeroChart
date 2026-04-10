@@ -31,11 +31,27 @@ from qAeroChart.utils.qt_compat import QgsUnitTypes, Qt
 from qAeroChart.ui.gs_rod_dialog import GsRodTableDialog
 
 TABLE_NAME = "gs_rod_table"
+TABLE_ID_PREFIX = "gs_table_"
 
 
 # ------------------------------------------------------------------
 # Internal helpers (mirror table_distance_altitude.py)
 # ------------------------------------------------------------------
+
+def _next_table_id(layout, prefix: str) -> str:
+    """Return the next sequential item ID for *prefix* in *layout*."""
+    max_n = 0
+    for item in layout.items():
+        try:
+            item_id = item.id()
+            if item_id.startswith(prefix):
+                n = int(item_id[len(prefix):])
+                if n > max_n:
+                    max_n = n
+        except (AttributeError, ValueError):
+            pass
+    return f"{prefix}{max_n + 1:03d}"
+
 
 def _calc_column_widths(
     total_width: float,
@@ -114,10 +130,9 @@ def _get_or_create_layout(name: str, project):
 
 
 def _remove_existing_table(layout) -> None:
-    for item in layout.items():
-        if hasattr(item, "customProperty") and item.customProperty("name") == TABLE_NAME:
-            layout.removeLayoutItem(item)
-            break
+    for mf in list(layout.multiFrames()):
+        if hasattr(mf, "customProperty") and mf.customProperty("name") == TABLE_NAME:
+            layout.removeMultiFrame(mf)
 
 
 def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
@@ -175,6 +190,14 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
         QgsLayoutSize(cfg["total_width"], computed_height, QgsUnitTypes.LayoutMillimeters)
     )
     frame.attemptMove(QgsLayoutPoint(x_pos, y_pos, QgsUnitTypes.LayoutMillimeters))
+
+    item_id = _next_table_id(layout, TABLE_ID_PREFIX)
+    frame.setId(item_id)
+    try:
+        frame.setDisplayName(item_id)
+    except Exception:
+        pass
+
     t.addFrame(frame)
 
 
@@ -202,6 +225,7 @@ def insert_from_dialog(dlg: GsRodTableDialog, iface=None) -> None:
     layout = _get_or_create_layout(layout_name, project)
     _remove_existing_table(layout)
     _build_table(table_rows, cfg, layout)
+    layout.refresh()
     n_cols = len(table_rows[0]) - 2 if table_rows else 0  # subtract label + unit cols
     if iface:
         iface.messageBar().pushInfo(

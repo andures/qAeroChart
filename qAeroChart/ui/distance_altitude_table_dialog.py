@@ -7,6 +7,8 @@ except ImportError:
         from PyQt5 import QtWidgets  # type: ignore
 from ..utils.qt_compat import Qt, QAbstractItemView
 from ..core.table_style_manager import TableStyleManager
+from ..core.dist_alt_calculator import DistAltConfig, compute_steps, steps_to_numeric_columns
+from ..core.distance_altitude_table import build_table_rows, compute_column_widths
 
 
 class DistanceAltitudeTableDialog(QtWidgets.QDialog):
@@ -36,6 +38,12 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         title.setStyleSheet("font-weight: bold; font-size: 11pt;")
         layout.addWidget(title)
 
+        self.mode_tabs = QtWidgets.QTabWidget()
+        manual_tab = QtWidgets.QWidget()
+        manual_layout = QtWidgets.QVBoxLayout(manual_tab)
+        manual_layout.setContentsMargins(0, 0, 0, 0)
+        manual_layout.setSpacing(8)
+
         # ---- Table Style section (Issue #71) ----
         style_grp = QtWidgets.QGroupBox("Table Style")
         style_row = QtWidgets.QHBoxLayout(style_grp)
@@ -58,7 +66,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         style_row.addWidget(btn_save_style)
         style_row.addWidget(self.btn_delete_style)
         style_row.addStretch(1)
-        layout.addWidget(style_grp)
+        manual_layout.addWidget(style_grp)
 
         # ---- Top controls (rows / cols — ①② fields removed per Issue #71) ----
         controls = QtWidgets.QGridLayout()
@@ -107,7 +115,11 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         row_btns.addStretch(1)
         controls.addLayout(row_btns, 1, 0, 1, 4)
 
-        layout.addLayout(controls)
+        manual_layout.addLayout(controls)
+
+        self.mode_tabs.addTab(manual_tab, "Manual")
+        self.mode_tabs.addTab(self._build_automatic_tab(), "Automatic")
+        layout.addWidget(self.mode_tabs)
 
         # Preview table
         self.table = QtWidgets.QTableWidget()
@@ -212,6 +224,133 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         self.spin_rows.valueChanged.connect(self._resize_table)
         self.spin_cols.valueChanged.connect(self._resize_table)
         self.combo_layouts.currentIndexChanged.connect(self._attach_current_layout)
+
+    # ---------- Automatic (CDFA) tab (Issue #99) ----------
+    def _build_automatic_tab(self) -> QtWidgets.QWidget:
+        """Build the 'Automatic' tab: CDFA parameters that compute and fill the
+        same 2-row preview grid the Manual tab edits by hand."""
+        tab = QtWidgets.QWidget()
+        tab_layout = QtWidgets.QVBoxLayout(tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.setSpacing(8)
+
+        grp = QtWidgets.QGroupBox("CDFA parameters")
+        grid = QtWidgets.QGridLayout(grp)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+
+        self.auto_line_thr = QtWidgets.QLineEdit("00")
+        self.auto_line_thr.setPlaceholderText("e.g. 07")
+        self.auto_line_thr.setFixedWidth(60)
+
+        self.auto_spin_faf_altitude = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_faf_altitude.setRange(0.0, 60000.0)
+        self.auto_spin_faf_altitude.setDecimals(0)
+        self.auto_spin_faf_altitude.setValue(6000)
+        self.auto_spin_faf_altitude.setSuffix(" ft")
+
+        self.auto_spin_thr_elevation = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_thr_elevation.setRange(-1500.0, 20000.0)
+        self.auto_spin_thr_elevation.setDecimals(0)
+        self.auto_spin_thr_elevation.setValue(1922)
+        self.auto_spin_thr_elevation.setSuffix(" ft")
+
+        self.auto_spin_distance = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_distance.setRange(0.1, 999.9)
+        self.auto_spin_distance.setDecimals(1)
+        self.auto_spin_distance.setValue(12.2)
+        self.auto_spin_distance.setSuffix(" NM")
+
+        self.auto_spin_tch_rdh = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_tch_rdh.setRange(0.0, 200.0)
+        self.auto_spin_tch_rdh.setDecimals(0)
+        self.auto_spin_tch_rdh.setValue(49)
+        self.auto_spin_tch_rdh.setSuffix(" ft")
+
+        self.auto_spin_oca = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_oca.setRange(-1500.0, 20000.0)
+        self.auto_spin_oca.setDecimals(0)
+        self.auto_spin_oca.setValue(2450)
+        self.auto_spin_oca.setSuffix(" ft")
+
+        self.auto_check_offset = QtWidgets.QCheckBox("Offset MAPt")
+        self.auto_spin_offset = QtWidgets.QDoubleSpinBox()
+        self.auto_spin_offset.setRange(0.0, 99.9)
+        self.auto_spin_offset.setDecimals(1)
+        self.auto_spin_offset.setValue(0.0)
+        self.auto_spin_offset.setSuffix(" NM")
+        self.auto_spin_offset.setEnabled(False)
+        self.auto_check_offset.toggled.connect(self.auto_spin_offset.setEnabled)
+
+        grid.addWidget(QtWidgets.QLabel("Runway (THR)"), 0, 0)
+        grid.addWidget(self.auto_line_thr, 0, 1)
+        grid.addWidget(QtWidgets.QLabel("FAF Altitude"), 0, 2)
+        grid.addWidget(self.auto_spin_faf_altitude, 0, 3)
+
+        grid.addWidget(QtWidgets.QLabel("THR Elevation"), 1, 0)
+        grid.addWidget(self.auto_spin_thr_elevation, 1, 1)
+        grid.addWidget(QtWidgets.QLabel("FAF-THR Distance"), 1, 2)
+        grid.addWidget(self.auto_spin_distance, 1, 3)
+
+        grid.addWidget(QtWidgets.QLabel("TCH/RDH"), 2, 0)
+        grid.addWidget(self.auto_spin_tch_rdh, 2, 1)
+        grid.addWidget(QtWidgets.QLabel("OCA"), 2, 2)
+        grid.addWidget(self.auto_spin_oca, 2, 3)
+
+        grid.addWidget(self.auto_check_offset, 3, 0)
+        grid.addWidget(self.auto_spin_offset, 3, 1)
+
+        tab_layout.addWidget(grp)
+
+        btn_calculate = QtWidgets.QPushButton("Calculate")
+        btn_calculate.clicked.connect(self._calculate_automatic)
+        calc_row = QtWidgets.QHBoxLayout()
+        calc_row.addStretch(1)
+        calc_row.addWidget(btn_calculate)
+        tab_layout.addLayout(calc_row)
+        tab_layout.addStretch(1)
+
+        return tab
+
+    def _calculate_automatic(self) -> None:
+        """Compute the CDFA stepdown and fill the shared preview grid (row 0 = distance
+        headers, row 1 = publication altitudes) — same shape the Manual tab edits by hand."""
+        try:
+            cfg = DistAltConfig(
+                faf_altitude_ft=self.auto_spin_faf_altitude.value(),
+                thr_elevation_ft=self.auto_spin_thr_elevation.value(),
+                faf_thr_distance_nm=self.auto_spin_distance.value(),
+                tch_rdh_ft=self.auto_spin_tch_rdh.value(),
+                oca_ft=self.auto_spin_oca.value(),
+                offset_enabled=self.auto_check_offset.isChecked(),
+                offset_distance_nm=self.auto_spin_offset.value(),
+            )
+            steps = compute_steps(cfg)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Distance/Altitude Table", str(exc))
+            return
+
+        if not steps:
+            QtWidgets.QMessageBox.warning(
+                self, "Distance/Altitude Table", "No rows to compute — check the offset distance."
+            )
+            return
+
+        thr = (self.auto_line_thr.text().strip() or "00")
+        numeric_columns = steps_to_numeric_columns(steps)
+        headers, values = build_table_rows(thr, numeric_columns)
+
+        self.spin_rows.setValue(2)
+        self.spin_cols.setValue(len(headers))
+        self._resize_table()
+        for c, val in enumerate(headers):
+            self.table.setItem(0, c, QtWidgets.QTableWidgetItem(val))
+        for c, val in enumerate(values):
+            self.table.setItem(1, c, QtWidgets.QTableWidgetItem(val))
+        # Keep first-column width consistent with the computed layout (matches _load_json intent)
+        widths = compute_column_widths(len(headers))
+        if widths:
+            self.spin_first_col.setValue(widths[0])
 
     def select_layout(self, name):
         """Select a layout in the combo if it exists (no-op otherwise)."""

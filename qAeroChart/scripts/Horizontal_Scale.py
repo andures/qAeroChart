@@ -33,6 +33,7 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.utils import iface
+from qAeroChart.utils.qt_compat import MsgLevel
 
 # Default parameters
 METRE_RIGHT: int = 2500
@@ -108,7 +109,7 @@ def run_horizontal_scale(
             iface.messageBar().pushMessage(
                 "Horizontal Scale",
                 "Select a guide line feature or set an origin/azimuth in the dock.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=4,
             )
             return
@@ -118,7 +119,7 @@ def run_horizontal_scale(
             iface.messageBar().pushMessage(
                 "Horizontal Scale",
                 "Selected feature is not a line.",
-                level=Qgis.Critical,
+                level=MsgLevel.Critical,
                 duration=4,
             )
             return
@@ -305,7 +306,7 @@ def run_horizontal_scale(
     iface.messageBar().pushMessage(
         "Horizontal Scale",
         f"Created scale lines and labels for '{name}'.",
-        level=Qgis.Success,
+        level=MsgLevel.Success,
         duration=4,
     )
 

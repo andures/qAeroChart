@@ -87,6 +87,8 @@ class QAeroChart:
         self.distance_table_action = None
         self.oca_h_table_action = None
         self._oca_h_dialog = None
+        self.dist_alt_calculator_action = None
+        self._dist_alt_calculator_dialog = None
         self._layout_toolbar_hooked = False
         self._layout_toolbars: list = []        # per-designer QToolBar instances (#87)
         self._layout_toolbar_windows: set = set()  # ids of windows already attached
@@ -350,6 +352,24 @@ class QAeroChart:
         except Exception:
             pass
 
+        # Distance/Altitude Calculator action (Issue #99)
+        dist_alt_calc_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_dist_alt_calculator.svg')
+        if not os.path.exists(dist_alt_calc_icon_path):
+            dist_alt_calc_icon_path = icon_path
+        self.dist_alt_calculator_action = QAction(
+            QIcon(dist_alt_calc_icon_path), self.tr('Distance/Altitude Calculator'), self.iface.mainWindow())
+        self.dist_alt_calculator_action.setObjectName('qAeroChartDistAltCalculatorAction')
+        self.dist_alt_calculator_action.setStatusTip(
+            self.tr('Calculate a CDFA stepdown distance/altitude table from FAF/THR parameters'))
+        self.dist_alt_calculator_action.triggered.connect(self._open_dist_alt_calculator_builder)
+        # dist_alt_calculator_action is available via the top menu and the Layout Designer toolbar;
+        # it is intentionally NOT added to the map canvas toolbar (#91)
+        try:
+            if self.top_menu:
+                self.top_menu.addAction(self.dist_alt_calculator_action)
+        except Exception:
+            pass
+
         # Initialize map tool manager — wrapped in try/except so a failure here
         # does NOT prevent layer_manager / controller from initialising (the
         # critical path for creating layers).
@@ -481,6 +501,13 @@ class QAeroChart:
                 pass
             self.oca_h_table_action = None
         self._oca_h_dialog = None
+        if self.dist_alt_calculator_action:
+            try:
+                self.iface.removeLayoutDesignerToolBarIcon(self.dist_alt_calculator_action)
+            except Exception:
+                pass
+            self.dist_alt_calculator_action = None
+        self._dist_alt_calculator_dialog = None
         if self._layout_toolbar_hooked:
             try:
                 self.iface.layoutDesignerOpened.disconnect(self._on_layout_designer_opened)
@@ -651,6 +678,41 @@ class QAeroChart:
         dlg.raise_()
         dlg.activateWindow()
 
+    def _open_dist_alt_calculator_builder(self) -> None:
+        """Launch the Distance/Altitude Calculator (CDFA) dialog (issue #99)."""
+        try:
+            from .scripts import table_dist_alt_calculator
+        except Exception as exc:
+            print(f"PLUGIN qAeroChart ERROR: Cannot import Distance/Altitude Calculator: {exc}")
+            return
+
+        # If dialog already open, just bring it to front
+        if self._dist_alt_calculator_dialog is not None and self._dist_alt_calculator_dialog.isVisible():
+            self._dist_alt_calculator_dialog.raise_()
+            self._dist_alt_calculator_dialog.activateWindow()
+            return
+
+        default_layout = self._active_layout_name()
+        parent_window = None
+        try:
+            designer = self.iface.activeLayoutDesignerInterface()
+            if designer is not None:
+                parent_window = designer.window()
+        except Exception:
+            parent_window = None
+
+        dlg = table_dist_alt_calculator.build_dialog(
+            iface=self.iface,
+            parent=parent_window,
+            default_layout_name=default_layout,
+        )
+        dlg.accepted.connect(lambda: self._safe_insert(table_dist_alt_calculator.insert_from_dialog, dlg))
+        dlg.finished.connect(lambda _: setattr(self, '_dist_alt_calculator_dialog', None))
+        self._dist_alt_calculator_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
     def _on_layout_designer_opened(self, designer_iface):
         """Ensure our action appears in the layout designer toolbar when a composition opens."""
 
@@ -680,7 +742,10 @@ class QAeroChart:
         toolbar = QToolBar(self.tr('qAeroChart tools'), window)
         toolbar.setObjectName('qAeroChartLayoutToolbar')
 
-        for action in (self.distance_table_action, self.gs_rod_action, self.oca_h_table_action):
+        for action in (
+            self.distance_table_action, self.gs_rod_action, self.oca_h_table_action,
+            self.dist_alt_calculator_action,
+        ):
             if action is not None:
                 toolbar.addAction(action)
 

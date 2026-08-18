@@ -32,6 +32,7 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.utils import iface
+from qAeroChart.utils.qt_compat import MsgLevel
 
 # Editable parameters
 SCALE_DENOMINATOR = 10000  # default vertical scale 1:10 000
@@ -83,7 +84,7 @@ def run_vertical_scale(
             iface.messageBar().pushMessage(
                 "Vertical Scale",
                 "Select a guide line feature or set an origin/azimuth in the dock.",
-                level=Qgis.Warning,
+                level=MsgLevel.Warning,
                 duration=4,
             )
             return
@@ -93,7 +94,7 @@ def run_vertical_scale(
             iface.messageBar().pushMessage(
                 "Vertical Scale",
                 "Selected feature is not a line.",
-                level=Qgis.Critical,
+                level=MsgLevel.Critical,
                 duration=4,
             )
             return
@@ -287,7 +288,7 @@ def run_vertical_scale(
     iface.messageBar().pushMessage(
         "Vertical Scale",
         "Created scale lines and labels (meters/feet).",
-        level=Qgis.Success,
+        level=MsgLevel.Success,
         duration=4,
     )
 

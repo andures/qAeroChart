@@ -25,7 +25,7 @@ class HoldingParameters:
     turn: str              # 'L' or 'R'
     ias_kt: float = 195.0
     altitude_ft: float = 10000.0
-    isa_var: float = 0.0   # ISA temperature deviation, °C
+    isa_var: float = 15.0  # ISA temperature deviation, °C (Issue #100)
     bank_deg: float = 25.0
     leg_min: float = 1.0
 
@@ -63,6 +63,45 @@ def _tas_calc(ias: float, altitude_ft: float, isa_var: float, bank_deg: float):
     rate = (3431.0 * math.tan(math.radians(bank_deg))) / (math.pi * tas)
     radius = tas / (20.0 * math.pi * rate)
     return tas, rate, radius
+
+
+def fix_and_track_from_line(
+    points: list[tuple[float, float]], use_end: bool = True
+) -> tuple[float, float, float]:
+    """Derive (fix_x, fix_y, inbound_track_deg) from a selected line's vertices (Issue #100).
+
+    Mirrors qPANSOPY's holding tool (``Q_Pansopy/modules/utilities/holding.py``), which always
+    uses the line's last vertex as the fix and derives the inbound track from the line's
+    orientation. qAeroChart additionally lets the caller choose the START vertex instead of the
+    END (qPANSOPY hardcodes END/last).
+
+    Parameters
+    ----------
+    points:
+        Ordered ``(x, y)`` vertices of the selected line feature, in map CRS units.
+    use_end:
+        ``True`` (default, matches qPANSOPY) uses the line's last vertex as the fix;
+        ``False`` uses the first vertex instead.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        ``(fix_x, fix_y, inbound_track_deg)`` — the track is the bearing (0-360°, 0=North,
+        clockwise) the aircraft flies TO the fix, i.e. the direction of arrival.
+    """
+    if len(points) < 2:
+        raise ValueError("A line needs at least 2 vertices to derive a fix and track")
+
+    if use_end:
+        fix_pt, other_pt = points[-1], points[-2]
+    else:
+        fix_pt, other_pt = points[0], points[1]
+
+    dx = fix_pt[0] - other_pt[0]
+    dy = fix_pt[1] - other_pt[1]
+    track = math.degrees(math.atan2(dx, dy)) % 360.0
+
+    return fix_pt[0], fix_pt[1], track
 
 
 def build_holding(params: HoldingParameters) -> HoldingResult:

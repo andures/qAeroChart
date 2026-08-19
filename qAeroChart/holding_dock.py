@@ -527,7 +527,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             self.lbl_tas.setText(f"{r.tas_kt:.1f} kt")
             self.lbl_radius.setText(f"{r.radius_nm:.3f} NM")
             self.lbl_leg_nm.setText(f"{r.leg_nm:.2f} NM")
-        except Exception:
+        except Exception:  # nosec B110 - best-effort UI update; a stale value is harmless if this fails
             pass
 
     # ------------------------------------------------------------------
@@ -545,7 +545,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             tool.set_preview_generator(self._generate_holding_preview)
         try:
             tool.originSelected.disconnect(self._on_fix_selected)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
             pass
         tool.originSelected.connect(self._on_fix_selected)
         self.tool_manager.activate_tool()
@@ -596,7 +596,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         if self.tool_manager:
             try:
                 self.tool_manager.deactivate_tool()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         self._map_tool = None
         self._prev_tool = None
@@ -667,6 +667,40 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             leg_min=self.dspin_leg.value(),
         )
 
+    def _run_params(self, params: dict):
+        fix = params.get("_fix")
+        if fix is None:
+            iface.messageBar().pushMessage(
+                "qAeroChart", "No fix point stored for this holding.",
+                level=MsgLevel.Warning, duration=4,
+            )
+            return
+        hp = HoldingParameters(
+            fix_x=fix["x"], fix_y=fix["y"],
+            inbound_track=params["inbound_track"],
+            turn=params["turn"],
+            ias_kt=params["ias_kt"],
+            altitude_ft=params["altitude_ft"],
+            isa_var=params["isa_var"],
+            bank_deg=params["bank_deg"],
+            leg_min=params["leg_min"],
+        )
+        result = build_holding(hp)
+        layer = self._layer_manager.get_or_create_layer(iface)
+        self._layer_manager.add_holding(layer, hp, result)
+        try:
+            _ml = getattr(__import__("qgis.core", fromlist=["Qgis"]).Qgis,
+                          "MessageLevel", None)
+            _success = getattr(_ml, "Success", 3) if _ml else 3
+            iface.messageBar().pushMessage(
+                "qAeroChart",
+                f"Holding drawn — TAS {result.tas_kt:.1f} kt | "
+                f"Radius {result.radius_nm:.3f} NM | Leg {result.leg_nm:.2f} NM",
+                level=_success, duration=5,
+            )
+        except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
+            pass
+
     def _on_run(self):
         self._restore_map_tool()
         if self.origin_point is None:
@@ -724,7 +758,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                     f"Radius {result.radius_nm:.3f} NM | Leg {result.leg_nm:.2f} NM",
                     level=_success, duration=5,
                 )
-            except Exception:
+            except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
                 pass
 
             self._refresh_history()

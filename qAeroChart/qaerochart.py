@@ -331,7 +331,7 @@ class QAeroChart:
             if self.top_menu:
                 self.top_menu.addAction(self.distance_table_action)
                 self.top_menu.addAction(self.gs_rod_action)
-        except Exception:
+        except Exception:  # nosec B110 - non-critical menu/toolbar setup; other actions still init
             pass
 
         # OCA/H table toolbar action
@@ -349,7 +349,7 @@ class QAeroChart:
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.oca_h_table_action)
-        except Exception:
+        except Exception:  # nosec B110 - non-critical menu/toolbar setup; other actions still init
             pass
 
         # Distance/Altitude Calculator action (Issue #99)
@@ -367,7 +367,7 @@ class QAeroChart:
         try:
             if self.top_menu:
                 self.top_menu.addAction(self.dist_alt_calculator_action)
-        except Exception:
+        except Exception:  # nosec B110 - non-critical menu/toolbar setup; other actions still init
             pass
 
         # Initialize map tool manager — wrapped in try/except so a failure here
@@ -425,12 +425,12 @@ class QAeroChart:
             if self.generate_profile_action:
                 try:
                     self.tools_toolbar.removeAction(self.generate_profile_action)
-                except Exception:
+                except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                     pass
             try:
                 # QGIS will handle deletion of toolbar instance
                 self.iface.mainWindow().removeToolBar(self.tools_toolbar)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.tools_toolbar = None
             self.generate_profile_action = None
@@ -438,7 +438,7 @@ class QAeroChart:
         if self.top_menu:
             try:
                 self.iface.mainWindow().menuBar().removeAction(self.top_menu.menuAction())
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.top_menu = None
 
@@ -447,7 +447,7 @@ class QAeroChart:
             try:
                 self.iface.removeDockWidget(self.vertical_scale_dock)
                 self.vertical_scale_dock.deleteLater()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.vertical_scale_dock = None
             self.vertical_scale_action = None
@@ -457,7 +457,7 @@ class QAeroChart:
             try:
                 self.iface.removeDockWidget(self.horizontal_scale_dock)
                 self.horizontal_scale_dock.deleteLater()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.horizontal_scale_dock = None
             self.horizontal_scale_action = None
@@ -482,7 +482,7 @@ class QAeroChart:
             try:
                 toolbar.hide()
                 toolbar.deleteLater()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
         self._layout_toolbars.clear()
         self._layout_toolbar_windows.clear()
@@ -491,27 +491,27 @@ class QAeroChart:
         if self.distance_table_action:
             try:
                 self.iface.removeLayoutDesignerToolBarIcon(self.distance_table_action)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.distance_table_action = None
         if self.oca_h_table_action:
             try:
                 self.iface.removeLayoutDesignerToolBarIcon(self.oca_h_table_action)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.oca_h_table_action = None
         self._oca_h_dialog = None
         if self.dist_alt_calculator_action:
             try:
                 self.iface.removeLayoutDesignerToolBarIcon(self.dist_alt_calculator_action)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self.dist_alt_calculator_action = None
         self._dist_alt_calculator_dialog = None
         if self._layout_toolbar_hooked:
             try:
                 self.iface.layoutDesignerOpened.disconnect(self._on_layout_designer_opened)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self._layout_toolbar_hooked = False
 
@@ -525,7 +525,7 @@ class QAeroChart:
             try:
                 self.iface.removeDockWidget(self._holding_dock)
                 self._holding_dock.deleteLater()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
                 pass
             self._holding_dock = None
         if self.holding_action:
@@ -540,13 +540,13 @@ class QAeroChart:
             designer = self.iface.activeLayoutDesignerInterface()
             if designer is not None and hasattr(designer, "layout") and designer.layout() is not None:
                 return designer.layout().name()
-        except Exception:
+        except Exception:  # nosec B110 - older/newer API probe; falls through to next attempt
             pass
         try:
             designer = self.iface.activeLayoutDesigner()
             if designer is not None and hasattr(designer, "layout") and designer.layout() is not None:
                 return designer.layout().name()
-        except Exception:
+        except Exception:  # nosec B110 - older/newer API probe; falls through to next attempt
             pass
         return None
 

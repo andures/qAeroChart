@@ -13,6 +13,8 @@ from qgis.core import QgsProject
 import json
 import time
 
+from .utils.logger import log
+
 
 class VerticalScaleManager:
     PREFIX = "qaerochart_vscale_"
@@ -38,8 +40,8 @@ class VerticalScaleManager:
     def _save_list(self, items):
         try:
             self._write(self.LIST_KEY, json.dumps(items))
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"Could not save vertical scale list: {e}", "WARNING")
 
     def save_new(self, params: dict):
         """Save a new scale config; returns new id."""
@@ -57,8 +59,8 @@ class VerticalScaleManager:
     def save_config(self, sid: str, params: dict):
         try:
             self._write(f"{self.PREFIX}{sid}", json.dumps(params))
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"Could not save vertical scale config '{sid}': {e}", "WARNING")
 
     def get_config(self, sid: str):
         raw = self._read(f"{self.PREFIX}{sid}", "")
@@ -108,8 +110,8 @@ class VerticalScaleManager:
             return False
         try:
             self.project.removeEntry("qAeroChart", f"{self.PREFIX}{sid}")
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"Could not remove vertical scale config '{sid}': {e}", "WARNING")
         items = [it for it in self.get_all() if it.get("id") != sid]
         self._save_list(items)
         return True

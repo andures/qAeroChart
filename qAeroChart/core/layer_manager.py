@@ -97,7 +97,7 @@ class LayerManager:
         try:
             if getattr(self, 'debug', False):
                 log(msg, "DEBUG")
-        except Exception:
+        except Exception:  # nosec B110 - non-critical debug/diagnostic output, safe to skip
             # Avoid any logging-related crashes
             pass
 
@@ -181,7 +181,7 @@ class LayerManager:
                             f"Projected CRS required. Current: {auth} ({desc})."
                             " Switch to a projected CRS (meters/feet)."
                         )
-                except Exception:
+                except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
                     pass
 
             return ok if enforce_block else True
@@ -210,7 +210,7 @@ class LayerManager:
         except Exception:
             try:
                 log(msg, level)
-            except Exception:
+            except Exception:  # nosec B110 - non-critical debug/diagnostic output, safe to skip
                 pass
 
     def _assign_feature_id(self, feature, layer_key, id_tracker):
@@ -326,7 +326,7 @@ class LayerManager:
         try:
             if config and isinstance(config, dict):
                 self.debug = bool(config.get('debug', True))
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
 
         self._dbg("Starting create_all_layers()")
@@ -444,7 +444,7 @@ class LayerManager:
             log(f"Created new group '{self.GROUP_NAME}'")
         try:
             self._dbg(f"Group '{self.GROUP_NAME}' child count: {len(self.layer_group.children())}")
-        except Exception:
+        except Exception:  # nosec B110 - non-critical debug/diagnostic output, safe to skip
             pass
 
         # Respect user layer tree order (Issue #11): do not auto-reorder/move group
@@ -457,8 +457,8 @@ class LayerManager:
         - point_name: Name/identifier (MAPt, FAF, IF, etc.)
         - point_type: Type of point (fix, navaid, threshold, etc.)
         - distance: Distance from reference point (NM)
-        - elevation: Elevation above MSL (ft)
-        - notes: Additional notes
+        - altitude: Altitude above MSL (ft)
+        - remarks: Additional remarks
 
         Returns:
             QgsVectorLayer: The created layer
@@ -472,8 +472,8 @@ class LayerManager:
             QgsField("point_name", QVariant.String, len=50),
             QgsField("point_type", QVariant.String, len=30),
             QgsField("distance", QVariant.Double),
-            QgsField("elevation", QVariant.Double),
-            QgsField("notes", QVariant.String, len=255)
+            QgsField("altitude", QVariant.Double),
+            QgsField("remarks", QVariant.String, len=255)
         ])
         layer.updateFields()
 
@@ -672,7 +672,7 @@ class LayerManager:
                         f"  -> layer '{layer_name}' valid={registered.isValid()}"
                         f" count={registered.featureCount()} extent={bbox}"
                     )
-                except Exception:
+                except Exception:  # nosec B110 - non-critical debug/diagnostic output, safe to skip
                     pass
             else:
                 print(f"[qAeroChart][DIAG] '{layer_name}' NOT in self.layers, skipping")
@@ -688,7 +688,7 @@ class LayerManager:
         try:
             for child in (self.layer_group.children() if self.layer_group is not None else []):
                 print(f"[qAeroChart][DIAG]   child: {child.name()}, type={type(child).__name__}")
-        except Exception:
+        except Exception:  # nosec B110 - non-critical debug/diagnostic output, safe to skip
             pass
         # Check project registry
         all_map_layers = self.project.mapLayers()
@@ -710,7 +710,7 @@ class LayerManager:
         # Move group to the top again (after new nodes were inserted)
         try:
             self._create_layer_group()  # will reuse existing and perform the move-to-top safety
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
 
         # WYSIWYG request (Issue #11): Disable any custom render ordering so the layer panel order controls drawing.
@@ -966,7 +966,7 @@ class LayerManager:
         # KEY VERTICALS merged into PROFILE_LINE per #40
 
     def add_point_feature(self, point, point_name, point_type="fix",
-                          distance=0.0, elevation=0.0, notes=""):
+                          distance=0.0, altitude=0.0, remarks=""):
         """
         Add a point feature to the profile_point_symbol layer.
 
@@ -975,8 +975,8 @@ class LayerManager:
             point_name (str): Name/identifier of the point
             point_type (str): Type of point (fix, navaid, threshold, etc.)
             distance (float): Distance from reference (NM)
-            elevation (float): Elevation above MSL (ft)
-            notes (str): Additional notes
+            altitude (float): Altitude above MSL (ft)
+            remarks (str): Additional remarks
 
         Returns:
             bool: True if feature was added successfully
@@ -994,8 +994,8 @@ class LayerManager:
         feature.setAttribute("point_name", point_name)
         feature.setAttribute("point_type", point_type)
         feature.setAttribute("distance", float(distance))
-        feature.setAttribute("elevation", float(elevation))
-        feature.setAttribute("notes", notes)
+        feature.setAttribute("altitude", float(altitude))
+        feature.setAttribute("remarks", remarks)
 
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -1711,7 +1711,7 @@ class LayerManager:
             crs = self.project.crs() if self.project else None
             if crs and crs.isValid():
                 return crs.authid()
-        except Exception:
+        except Exception:  # nosec B110 - falls through to the explicit fallback value below
             pass
         return "EPSG:4326"
 
@@ -1989,7 +1989,7 @@ class LayerManager:
                         )
                         import math
                         deg = math.degrees(math.atan(grad_percent/100.0))
-                        text = f"{deg:.1f}Â° ({grad_percent:.1f}%)"
+                        text = f"{deg:.1f}° ({grad_percent:.1f}%)"
                         mid_nm = (float(p1.get('distance_nm', 0)) + float(p2.get('distance_nm', 0))) / 2.0
                         # Keep visual offset roughly constant despite VE
                         mid_ft_rel = (
@@ -2089,9 +2089,9 @@ class LayerManager:
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
-                    # Keep stored attribute as absolute MSL elevation
-                    feat.setAttribute("elevation", float(elevation_ft))
-                    feat.setAttribute("notes", notes)
+                    # Keep stored attribute as absolute MSL altitude
+                    feat.setAttribute("altitude", float(elevation_ft))
+                    feat.setAttribute("remarks", notes)
                     point_features.append(feat)
 
                 # Prepare label
@@ -2146,7 +2146,7 @@ class LayerManager:
                 axis_max = float(style.get('axis_max_nm', max_distance_nm))
                 if axis_max > max_distance_nm:
                     max_distance_nm = axis_max
-            except Exception:
+            except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
                 pass
             # Maintain visual sizes independent of VE by dividing base by VE
             # Allow tick visual height to be configurable in style; default 200 m visual
@@ -2233,7 +2233,7 @@ class LayerManager:
         has_explicit_moca = False
         try:
             has_explicit_moca = bool(config.get('moca_segments'))
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
 
         if has_oca:
@@ -2470,7 +2470,7 @@ class LayerManager:
                                 level=MsgLevel.Info,
                                 duration=4,
                             )
-                    except Exception:
+                    except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
                         pass
             except Exception as e:
                 log(f"Fallback rebuild failed: {e}", "WARNING")

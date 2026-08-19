@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Table body: header + 3 data rows, 3 columns -->
+  <rect x="4" y="8" width="56" height="48" fill="none" stroke="#000" stroke-width="2"/>
+  <!-- Horizontal dividers -->
+  <line x1="4" y1="19" x2="60" y2="19" stroke="#000" stroke-width="1.5"/>
+  <line x1="4" y1="30" x2="60" y2="30" stroke="#000" stroke-width="1.5"/>
+  <line x1="4" y1="41" x2="60" y2="41" stroke="#000" stroke-width="1.5"/>
+  <!-- Vertical dividers -->
+  <line x1="22" y1="8" x2="22" y2="56" stroke="#000" stroke-width="1.5"/>
+  <line x1="41" y1="8" x2="41" y2="56" stroke="#000" stroke-width="1.5"/>
+  <!-- Header row -->
+  <text x="13" y="16" font-size="5.5" fill="#000" font-family="Arial" text-anchor="middle" font-weight="bold">NM</text>
+  <text x="31.5" y="16" font-size="5.5" fill="#000" font-family="Arial" text-anchor="middle" font-weight="bold">ALT</text>
+  <text x="50.5" y="16" font-size="5.5" fill="#000" font-family="Arial" text-anchor="middle" font-weight="bold">ADV</text>
+  <!-- Data rows -->
+  <text x="13" y="27" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">12</text>
+  <text x="31.5" y="27" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">5940</text>
+  <text x="50.5" y="27" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">✓</text>
+  <text x="13" y="38" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">6</text>
+  <text x="31.5" y="38" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">3400</text>
+  <text x="50.5" y="38" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">✓</text>
+  <text x="13" y="49" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">0</text>
+  <text x="31.5" y="49" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">1970</text>
+  <text x="50.5" y="49" font-size="5" fill="#000" font-family="Arial" text-anchor="middle">✓</text>
+  <!-- Gradient arrow suggesting a computed descent -->
+  <line x1="8" y1="10" x2="20" y2="17" stroke="#c0392b" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/>
+    </marker>
+  </defs>
+</svg>

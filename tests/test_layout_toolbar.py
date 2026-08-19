@@ -58,6 +58,7 @@ def _make_plugin() -> types.SimpleNamespace:
     p.distance_table_action = MagicMock(name="distance_table_action")
     p.gs_rod_action = MagicMock(name="gs_rod_action")
     p.oca_h_table_action = MagicMock(name="oca_h_table_action")
+    p.dist_alt_calculator_action = MagicMock(name="dist_alt_calculator_action")
     # tr() just returns its argument
     p.tr = lambda s: s
     # Bind the real method from qaerochart.py without constructing the full plugin
@@ -93,17 +94,18 @@ class TestAttachActionToDesigner:
         plugin._attach_action_to_designer(FakeDesigner())
         assert len(plugin._layout_toolbars) == 2
 
-    def test_toolbar_has_three_actions(self):
-        """The created toolbar must receive addAction calls for all three actions."""
+    def test_toolbar_has_four_actions(self):
+        """The created toolbar must receive addAction calls for all four actions."""
         plugin = _make_plugin()
         designer = FakeDesigner()
         plugin._attach_action_to_designer(designer)
         toolbar = plugin._layout_toolbars[0]
-        # addAction was called thrice: distance, gs_rod, oca_h
-        assert toolbar.addAction.call_count == 3
+        # addAction was called four times: distance, gs_rod, oca_h, dist_alt_calculator
+        assert toolbar.addAction.call_count == 4
         toolbar.addAction.assert_any_call(plugin.distance_table_action)
         toolbar.addAction.assert_any_call(plugin.gs_rod_action)
         toolbar.addAction.assert_any_call(plugin.oca_h_table_action)
+        toolbar.addAction.assert_any_call(plugin.dist_alt_calculator_action)
 
     def test_toolbar_added_to_window(self):
         """The designer window must have addToolBar called with the new toolbar."""
@@ -143,9 +145,10 @@ class TestAttachActionToDesigner:
         designer = FakeDesigner()
         plugin._attach_action_to_designer(designer)
         toolbar = plugin._layout_toolbars[0]
-        assert toolbar.addAction.call_count == 2
+        assert toolbar.addAction.call_count == 3
         toolbar.addAction.assert_any_call(plugin.distance_table_action)
         toolbar.addAction.assert_any_call(plugin.oca_h_table_action)
+        toolbar.addAction.assert_any_call(plugin.dist_alt_calculator_action)
 
     def test_window_id_tracked(self):
         """After attaching, the window id must appear in _layout_toolbar_windows."""

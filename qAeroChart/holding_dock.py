@@ -50,6 +50,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.origin_point = None
         self.last_params = None
         self.run_history: list[dict] = []
+        self._editing_index: int | None = None
         self._layer_manager = HoldingLayerManager()
 
         self._build_ui()
@@ -108,7 +109,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.btn_new = QPushButton("+ New Holding")
         self.btn_new.setMinimumHeight(35)
         self.btn_new.setStyleSheet("background-color: #CC00CC; color: white; font-weight: bold;")
-        self.btn_run_selected = QPushButton("Re-run")
+        self.btn_run_selected = QPushButton("Edit")
         self.btn_run_selected.setMinimumHeight(35)
         self.btn_delete = QPushButton("Delete")
         self.btn_delete.setMinimumHeight(35)
@@ -117,7 +118,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.btn_delete.setEnabled(False)
 
         self.btn_new.clicked.connect(self._on_new_clicked)
-        self.btn_run_selected.clicked.connect(self._on_run_selected)
+        self.btn_run_selected.clicked.connect(self._on_edit_selected)
         self.btn_delete.clicked.connect(self._on_delete_selected)
         menu_buttons.addWidget(self.btn_new)
         menu_buttons.addWidget(self.btn_run_selected)
@@ -338,6 +339,8 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
 
     def show_menu(self):
         self._restore_map_tool()
+        self._editing_index = None
+        self._update_submit_button_label()
         self.stack.setCurrentWidget(self.page_menu)
         self._update_buttons()
 
@@ -349,6 +352,8 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.show_form()
 
     def _reset_form(self):
+        self._editing_index = None
+        self._update_submit_button_label()
         next_idx = len(self.run_history) + 1
         self.line_name.setText(f"Holding {next_idx:02d}")
         self.dspin_track.setValue(180.0)
@@ -362,6 +367,33 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.radio_line_end.setChecked(True)
         self.origin_point = None
         self.line_fix.clear()
+        self._update_computed()
+
+    def _update_submit_button_label(self):
+        """Reflect create-vs-edit mode on the form's submit button (Issue #101)."""
+        self.btn_run.setText("Update Holding" if self._editing_index is not None else "Create Holding")
+
+    def _load_params_into_form(self, params: dict):
+        """Pre-fill the form with a stored holding's parameters for editing (Issue #101)."""
+        self.line_name.setText(params.get("name", ""))
+        self.dspin_track.setValue(params.get("inbound_track", 180.0))
+        self.dspin_ias.setValue(params.get("ias_kt", 195.0))
+        self.dspin_alt.setValue(params.get("altitude_ft", 10000.0))
+        self.dspin_isa.setValue(params.get("isa_var", 15.0))
+        self.dspin_bank.setValue(params.get("bank_deg", 25.0))
+        self.dspin_leg.setValue(params.get("leg_min", 1.0))
+        (self.radio_l if params.get("turn") == "L" else self.radio_r).setChecked(True)
+
+        fix = params.get("_fix") or {}
+        x, y = fix.get("x"), fix.get("y")
+        if x is not None and y is not None:
+            self.origin_point = QgsPointXY(x, y)
+            self.line_fix.setText(f"{x:.3f}, {y:.3f}")
+        else:
+            self.origin_point = None
+            self.line_fix.clear()
+        # Editing doesn't re-derive the fix from a line feature — show the stored point.
+        self.radio_fix_point.setChecked(True)
         self._update_computed()
 
     def _update_buttons(self):
@@ -409,27 +441,40 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         except IndexError:
             return None
 
-    def _on_run_selected(self):
-        params = self._selected_params()
-        if not params:
+    def _on_edit_selected(self):
+        """Open the form pre-filled with the selected holding's parameters (Issue #101)."""
+        items = self.list_holdings.selectedItems()
+        if not items:
+            return
+        idx = items[0].data(Qt.UserRole)
+        if idx is None:
             return
         try:
-            self._run_params(params)
-        except Exception as e:
-            try:
-                iface.messageBar().pushCritical("qAeroChart", f"Holding error: {e}")
-            except Exception:
-                print(f"Holding ERROR: {e}")
+            params = self.run_history[idx]
+        except IndexError:
+            return
+        self._editing_index = idx
+        self._load_params_into_form(params)
+        self._update_submit_button_label()
+        self.show_form()
 
     def _on_delete_selected(self):
         items = self.list_holdings.selectedItems()
         if not items:
             return
         idx = items[0].data(Qt.UserRole)
+        entry = None
         if idx is not None:
             try:
-                self.run_history.pop(idx)
+                entry = self.run_history.pop(idx)
             except IndexError:
+                pass
+        holding_id = entry.get("holding_id") if entry else None
+        if holding_id:
+            try:
+                layer = self._layer_manager.get_or_create_layer(iface)
+                self._layer_manager.remove_holding(layer, holding_id)
+            except Exception:
                 pass
         self._refresh_history()
         self._update_buttons()
@@ -622,40 +667,6 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             leg_min=self.dspin_leg.value(),
         )
 
-    def _run_params(self, params: dict):
-        fix = params.get("_fix")
-        if fix is None:
-            iface.messageBar().pushMessage(
-                "qAeroChart", "No fix point stored for this holding.",
-                level=MsgLevel.Warning, duration=4,
-            )
-            return
-        hp = HoldingParameters(
-            fix_x=fix["x"], fix_y=fix["y"],
-            inbound_track=params["inbound_track"],
-            turn=params["turn"],
-            ias_kt=params["ias_kt"],
-            altitude_ft=params["altitude_ft"],
-            isa_var=params["isa_var"],
-            bank_deg=params["bank_deg"],
-            leg_min=params["leg_min"],
-        )
-        result = build_holding(hp)
-        layer = self._layer_manager.get_or_create_layer(iface)
-        self._layer_manager.add_holding(layer, hp, result)
-        try:
-            _ml = getattr(__import__("qgis.core", fromlist=["Qgis"]).Qgis,
-                          "MessageLevel", None)
-            _success = getattr(_ml, "Success", 3) if _ml else 3
-            iface.messageBar().pushMessage(
-                "qAeroChart",
-                f"Holding drawn — TAS {result.tas_kt:.1f} kt | "
-                f"Radius {result.radius_nm:.3f} NM | Leg {result.leg_nm:.2f} NM",
-                level=_success, duration=5,
-            )
-        except Exception:
-            pass
-
     def _on_run(self):
         self._restore_map_tool()
         if self.origin_point is None:
@@ -672,7 +683,16 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         try:
             result = build_holding(hp)
             layer = self._layer_manager.get_or_create_layer(iface)
-            self._layer_manager.add_holding(layer, hp, result)
+
+            # Editing an existing holding: remove its old geometry before redrawing
+            # (Issue #101) so Update replaces rather than duplicates the racetrack.
+            editing_index = self._editing_index
+            if editing_index is not None:
+                old_id = self.run_history[editing_index].get("holding_id")
+                if old_id:
+                    self._layer_manager.remove_holding(layer, old_id)
+
+            holding_id = self._layer_manager.add_holding(layer, hp, result)
 
             # Store in session history
             name = self.line_name.text().strip() or f"Holding {len(self.run_history) + 1:02d}"
@@ -686,8 +706,12 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                 "bank_deg": hp.bank_deg,
                 "leg_min": hp.leg_min,
                 "_fix": {"x": self.origin_point.x(), "y": self.origin_point.y()},
+                "holding_id": holding_id,
             }
-            self.run_history.append(entry)
+            if editing_index is not None:
+                self.run_history[editing_index] = entry
+            else:
+                self.run_history.append(entry)
             self.last_params = entry
 
             try:

@@ -69,8 +69,12 @@ class HoldingLayerManager:
         return layer
 
     def add_holding(self, layer: QgsVectorLayer,
-                    params: HoldingParameters, result: HoldingResult) -> None:
-        """Append the 4 racetrack segments of one holding to *layer*."""
+                    params: HoldingParameters, result: HoldingResult) -> str:
+        """Append the 4 racetrack segments of one holding to *layer*.
+
+        Returns the generated ``holding_id`` so callers can later target these
+        features with :meth:`remove_holding` (Issue #101).
+        """
         holding_id = uuid.uuid4().hex[:8]
         attrs = [
             holding_id,
@@ -104,6 +108,17 @@ class HoldingLayerManager:
         layer.updateExtents()
         layer.triggerRepaint()
         log(f"HoldingLayerManager: added holding {holding_id} to '{self.LAYER_NAME}'")
+        return holding_id
+
+    def remove_holding(self, layer: QgsVectorLayer, holding_id: str) -> None:
+        """Delete all features tagged with *holding_id* from *layer* (Issue #101)."""
+        ids = [f.id() for f in layer.getFeatures() if f["holding_id"] == holding_id]
+        if not ids:
+            return
+        layer.dataProvider().deleteFeatures(ids)
+        layer.updateExtents()
+        layer.triggerRepaint()
+        log(f"HoldingLayerManager: removed holding {holding_id} from '{self.LAYER_NAME}'")
 
     # ------------------------------------------------------------------
     # Internals

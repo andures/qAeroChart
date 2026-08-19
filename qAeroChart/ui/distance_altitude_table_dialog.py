@@ -506,7 +506,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
             if layout is not None:
                 self._layout = layout
                 self._refresh_existing_tables()
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
 
     def _load_from_existing(self):
@@ -550,7 +550,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         if cfg.get("font_size"):
             try:
                 self.spin_font_size.setValue(float(cfg["font_size"]))
-            except Exception:
+            except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
                 pass
 
     def _reload_layouts(self):
@@ -650,7 +650,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         builtin = next((s["builtin"] for s in all_styles if s["name"] == name), True)
         try:
             self.btn_delete_style.setEnabled(not builtin)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort UI sync; state self-corrects on next call
             pass
 
     def _apply_selected_style(self, *, seed_only: bool = False) -> None:
@@ -710,7 +710,7 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
             top_left = item00.text() if item00 else ""
             item10 = self.table.item(1, 0)
             first_col = item10.text() if item10 else ""
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
         params = {
             "name": name,

@@ -229,7 +229,7 @@ def _resolve_unit(qgis4_dotted: str, qgsunit_attr: str, fallback):
         for part in parts:
             obj = getattr(obj, part)
         return obj
-    except Exception:
+    except Exception:  # nosec B110 - falls through to the explicit fallback value below
         pass
     try:
         from qgis.core import QgsUnitTypes as _QUT
@@ -309,7 +309,7 @@ def _resolve_msg_level(name: str, fallback_int: int):
         val = getattr(_Qgis, name, None)
         if val is not None:
             return val
-    except Exception:
+    except Exception:  # nosec B110 - falls through to the explicit fallback value below
         pass
     return fallback_int
 

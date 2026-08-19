@@ -207,11 +207,11 @@ class HoldingDialog(QtWidgets.QDialog):
         if self._tool and self.iface:
             try:
                 self.iface.mapCanvas().unsetMapTool(self._tool)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
             try:
                 self._tool.clear()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         self._tool = None
         self.btn_pick.setText("Pick on map")
@@ -268,7 +268,7 @@ class HoldingDialog(QtWidgets.QDialog):
                     _ml = getattr(Qgis, "MessageLevel", None)
                     _success = getattr(_ml, "Success", None) if _ml else getattr(Qgis, "Success", 3)
                     self.iface.messageBar().pushMessage("qAeroChart", msg, level=_success, duration=5)
-                except Exception:
+                except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
                     pass
             log(f"Holding created at ({self._fix_x:.2f}, {self._fix_y:.2f}), "
                 f"track {params.inbound_track}°, turn {params.turn}")

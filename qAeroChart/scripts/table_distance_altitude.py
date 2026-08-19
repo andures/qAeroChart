@@ -93,7 +93,7 @@ def _build_table(table_rows, cfg, layout):
     t.setGridStrokeWidth(cfg["stroke"])
     try:
         t.setCellMargin(cfg["cell_margin"])
-    except Exception:
+    except Exception:  # nosec B110 - older QGIS lacks this API; table renders with default margin
         # Older QGIS versions may not expose cell margin; ignore gracefully
         pass
     t.setCustomProperty("name", TABLE_NAME)
@@ -123,7 +123,7 @@ def _build_table(table_rows, cfg, layout):
         if rows > 0:
             per_row = max(cfg.get("font_size", 8.0) * 2.2, 8.0)  # scale with font size
             computed_height = max(cfg["height"], rows * per_row + 2 * cfg["cell_margin"] + cfg["stroke"])
-    except Exception:
+    except Exception:  # nosec B110 - optional layout adjustment; the configured default is used
         pass
 
     # If x/y look like legacy defaults (very large y), center horizontally and move near top
@@ -137,7 +137,7 @@ def _build_table(table_rows, cfg, layout):
                 x_pos = (page_size.width() - cfg["total_width"]) / 2.0
             if cfg["y"] is None or cfg["y"] <= 0 or cfg["y"] >= page_size.height() * 0.6:
                 y_pos = (page_size.height() - computed_height) / 2.0
-    except Exception:
+    except Exception:  # nosec B110 - optional layout adjustment; the configured default is used
         pass
 
     frame = QgsLayoutFrame(layout, t)
@@ -150,7 +150,7 @@ def _build_table(table_rows, cfg, layout):
     frame.setId(item_id)
     try:
         frame.setDisplayName(item_id)
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic display name; frame still usable without it
         pass
 
     t.addFrame(frame)
@@ -167,7 +167,7 @@ def build_dialog(iface=None, parent=None, default_layout_name=None):
             project = QgsProject.instance()
             layout = _get_or_create_layout(default_layout_name, project)
             dlg.set_layout(layout)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort dialog preset; dialog still opens normally
             pass
     return dlg
 

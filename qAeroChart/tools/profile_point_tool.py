@@ -219,7 +219,7 @@ class ProfilePointTool(QgsMapTool):
             match = self.canvas.snappingUtils().snapToMap(pos)
             if match.isValid():
                 return match.point()
-        except Exception:
+        except Exception:  # nosec B110 - falls through to the explicit fallback value below
             pass
         return self.toMapCoordinates(pos)
 
@@ -474,7 +474,7 @@ class ProfilePointTool(QgsMapTool):
                 scene = self.canvas.scene()
                 if scene and item.scene():
                     scene.removeItem(item)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         self.preview_label_items = []
 
@@ -488,7 +488,7 @@ class ProfilePointTool(QgsMapTool):
                 scene = self.canvas.scene()
                 if scene and item.scene():
                     scene.removeItem(item)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         self.preview_arrow_items = []
 

@@ -202,7 +202,7 @@ def run_horizontal_scale(
     try:
         ctr = fwd(base_m, metre_right / 2.0)
         add_label(ctr.project(lbl_off * 1.8, angle - 90.0), "METRES")
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # ---- Feet rail ticks (lower rail, ticks go down) ----
@@ -233,7 +233,7 @@ def run_horizontal_scale(
     try:
         ctr = fwd(base_f, (ft_right * _FT_TO_M) / 2.0)
         add_label(ctr.project(lbl_off * 1.8, angle + 90.0), "FEET")
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # ---- Main spine lines ----
@@ -255,7 +255,7 @@ def run_horizontal_scale(
         sym.setColor(QColor("black"))
         sym.setWidth(0.25)
         line_layer.triggerRepaint()
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     try:
@@ -264,7 +264,7 @@ def run_horizontal_scale(
         try:
             pt_sym = QgsMarkerSymbol.createSimple({"color": "transparent", "size": "0"})
             label_layer.setRenderer(QgsSingleSymbolRenderer(pt_sym))
-        except Exception:
+        except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
             pass
 
     try:
@@ -289,7 +289,7 @@ def run_horizontal_scale(
         label_layer.setLabelsEnabled(True)
         label_layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
         label_layer.triggerRepaint()
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # ---- Add to project ----

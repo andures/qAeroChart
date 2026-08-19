@@ -163,7 +163,7 @@ class LayoutManager:
         frame.setId(item_id)
         try:
             frame.setDisplayName(item_id)
-        except Exception:
+        except Exception:  # nosec B110 - cosmetic display name; frame still usable without it
             pass
 
         t.addFrame(frame)

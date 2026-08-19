@@ -482,7 +482,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             self.lbl_tas.setText(f"{r.tas_kt:.1f} kt")
             self.lbl_radius.setText(f"{r.radius_nm:.3f} NM")
             self.lbl_leg_nm.setText(f"{r.leg_nm:.2f} NM")
-        except Exception:
+        except Exception:  # nosec B110 - best-effort UI update; a stale value is harmless if this fails
             pass
 
     # ------------------------------------------------------------------
@@ -500,7 +500,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             tool.set_preview_generator(self._generate_holding_preview)
         try:
             tool.originSelected.disconnect(self._on_fix_selected)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
             pass
         tool.originSelected.connect(self._on_fix_selected)
         self.tool_manager.activate_tool()
@@ -551,7 +551,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         if self.tool_manager:
             try:
                 self.tool_manager.deactivate_tool()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         self._map_tool = None
         self._prev_tool = None
@@ -653,7 +653,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                 f"Radius {result.radius_nm:.3f} NM | Leg {result.leg_nm:.2f} NM",
                 level=_success, duration=5,
             )
-        except Exception:
+        except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
             pass
 
     def _on_run(self):
@@ -700,7 +700,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                     f"Radius {result.radius_nm:.3f} NM | Leg {result.leg_nm:.2f} NM",
                     level=_success, duration=5,
                 )
-            except Exception:
+            except Exception:  # nosec B110 - best-effort UI message; main operation already succeeded
                 pass
 
             self._refresh_history()

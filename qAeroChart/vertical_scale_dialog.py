@@ -50,7 +50,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         # Shortcut for rename (F2)
         try:
             self._rename_shortcut = None
-        except Exception:
+        except Exception:  # nosec B110 - non-critical widget wiring; rest of the UI still works
             pass
 
         self._build_ui()
@@ -94,7 +94,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             self.list_scales.customContextMenuRequested.connect(self._on_list_context_menu)
             self._rename_shortcut = QShortcut(QKeySequence(Qt.Key_F2), self.list_scales)
             self._rename_shortcut.activated.connect(self._rename_selected)
-        except Exception:
+        except Exception:  # nosec B110 - non-critical widget wiring; rest of the UI still works
             pass
         self.list_scales.setMinimumHeight(220)
         self.list_scales.setMaximumHeight(260)
@@ -346,7 +346,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             self.btn_edit.setEnabled(has_items)
             self.btn_run_selected.setEnabled(has_items)
             self.btn_delete.setEnabled(has_items)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort UI sync; state self-corrects on next call
             pass
 
     def _load_persisted_scales(self):
@@ -356,7 +356,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             self.last_params = self.run_history[-1] if self.run_history else None
             self._refresh_history()
             self._update_edit_button()
-        except Exception:
+        except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
             pass
 
     def _to_storable(self, params):
@@ -511,7 +511,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
             tool.set_preview_generator(self._generate_scale_preview)
         try:
             tool.originSelected.disconnect(self._on_origin_selected)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
             pass
         tool.originSelected.connect(self._on_origin_selected)
         self.tool_manager.activate_tool()
@@ -525,17 +525,17 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         if self.tool_manager:
             try:
                 self.tool_manager.deactivate_tool()
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         if self._map_tool:
             try:
                 self._map_tool.canvasClicked.disconnect(self._on_origin_selected)
-            except Exception:
+            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
                 pass
         try:
             if self._prev_tool:
                 iface.mapCanvas().setMapTool(self._prev_tool)
-        except Exception:
+        except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
             pass
         self._map_tool = None
         self._prev_tool = None

@@ -142,7 +142,7 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
     t.setGridStrokeWidth(cfg["stroke"])
     try:
         t.setCellMargin(cfg["cell_margin"])
-    except Exception:
+    except Exception:  # nosec B110 - older QGIS lacks this API; table renders with default margin
         pass
     t.setCustomProperty("name", TABLE_NAME)
 
@@ -170,7 +170,7 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
         if rows > 0:
             per_row = max(cfg.get("font_size", 8.0) * 2.2, 8.0)
             computed_height = max(cfg["height"], rows * per_row + 2 * cfg["cell_margin"] + cfg["stroke"])
-    except Exception:
+    except Exception:  # nosec B110 - optional layout adjustment; the configured default is used
         pass
 
     x_pos = cfg["x"]
@@ -183,7 +183,7 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
                 x_pos = (page_size.width() - cfg["total_width"]) / 2.0
             if cfg["y"] is None or cfg["y"] <= 0 or cfg["y"] >= page_size.height() * 0.6:
                 y_pos = (page_size.height() - computed_height) / 2.0
-    except Exception:
+    except Exception:  # nosec B110 - optional layout adjustment; the configured default is used
         pass
 
     frame = QgsLayoutFrame(layout, t)
@@ -196,7 +196,7 @@ def _build_table(table_rows: list[list[str]], cfg: dict, layout) -> None:
     frame.setId(item_id)
     try:
         frame.setDisplayName(item_id)
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic display name; frame still usable without it
         pass
 
     t.addFrame(frame)

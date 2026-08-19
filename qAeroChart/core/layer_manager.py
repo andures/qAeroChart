@@ -457,8 +457,8 @@ class LayerManager:
         - point_name: Name/identifier (MAPt, FAF, IF, etc.)
         - point_type: Type of point (fix, navaid, threshold, etc.)
         - distance: Distance from reference point (NM)
-        - elevation: Elevation above MSL (ft)
-        - notes: Additional notes
+        - altitude: Altitude above MSL (ft)
+        - remarks: Additional remarks
 
         Returns:
             QgsVectorLayer: The created layer
@@ -472,8 +472,8 @@ class LayerManager:
             QgsField("point_name", QVariant.String, len=50),
             QgsField("point_type", QVariant.String, len=30),
             QgsField("distance", QVariant.Double),
-            QgsField("elevation", QVariant.Double),
-            QgsField("notes", QVariant.String, len=255)
+            QgsField("altitude", QVariant.Double),
+            QgsField("remarks", QVariant.String, len=255)
         ])
         layer.updateFields()
 
@@ -966,7 +966,7 @@ class LayerManager:
         # KEY VERTICALS merged into PROFILE_LINE per #40
 
     def add_point_feature(self, point, point_name, point_type="fix",
-                          distance=0.0, elevation=0.0, notes=""):
+                          distance=0.0, altitude=0.0, remarks=""):
         """
         Add a point feature to the profile_point_symbol layer.
 
@@ -975,8 +975,8 @@ class LayerManager:
             point_name (str): Name/identifier of the point
             point_type (str): Type of point (fix, navaid, threshold, etc.)
             distance (float): Distance from reference (NM)
-            elevation (float): Elevation above MSL (ft)
-            notes (str): Additional notes
+            altitude (float): Altitude above MSL (ft)
+            remarks (str): Additional remarks
 
         Returns:
             bool: True if feature was added successfully
@@ -994,8 +994,8 @@ class LayerManager:
         feature.setAttribute("point_name", point_name)
         feature.setAttribute("point_type", point_type)
         feature.setAttribute("distance", float(distance))
-        feature.setAttribute("elevation", float(elevation))
-        feature.setAttribute("notes", notes)
+        feature.setAttribute("altitude", float(altitude))
+        feature.setAttribute("remarks", remarks)
 
         layer.startEditing()
         success = layer.addFeature(feature)
@@ -2089,9 +2089,9 @@ class LayerManager:
                     feat.setAttribute("point_name", point_name)
                     feat.setAttribute("point_type", "fix")
                     feat.setAttribute("distance", float(distance_nm))
-                    # Keep stored attribute as absolute MSL elevation
-                    feat.setAttribute("elevation", float(elevation_ft))
-                    feat.setAttribute("notes", notes)
+                    # Keep stored attribute as absolute MSL altitude
+                    feat.setAttribute("altitude", float(elevation_ft))
+                    feat.setAttribute("remarks", notes)
                     point_features.append(feat)
 
                 # Prepare label

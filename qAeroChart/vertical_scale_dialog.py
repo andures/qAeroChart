@@ -191,7 +191,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         origin_container.setLayout(origin_row)
         form_origin.addRow("Origin point", origin_container)
 
-        form_origin.addRow("Azimuth (deg)", self._spin_field("azimuth", QSpinBox, 0, 359, 90, 5))
+        form_origin.addRow("Azimuth (deg)", self._spin_field("azimuth", QSpinBox, 0, 359, 0, 5))
         layout.addWidget(grp_origin)
 
         # Scale & Style
@@ -317,7 +317,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         self.spin_m_step.setValue(25)
         self.spin_ft_max.setValue(300)
         self.spin_ft_step.setValue(50)
-        self.spin_azimuth.setValue(90)
+        self.spin_azimuth.setValue(0)
         self.origin_point = None
         self.line_origin.clear()
         self.current_scale_id = None
@@ -331,7 +331,7 @@ class VerticalScaleDockWidget(QtWidgets.QDockWidget):
         self.spin_m_step.setValue(int(params.get("m_step", 25)))
         self.spin_ft_max.setValue(int(params.get("ft_max", 300)))
         self.spin_ft_step.setValue(int(params.get("ft_step", 50)))
-        self.spin_azimuth.setValue(int(params.get("angle", 90)))
+        self.spin_azimuth.setValue(int(params.get("angle", 0)))
         bp = params.get("basepoint")
         self.current_scale_id = params.get("id")
         self.origin_point = bp

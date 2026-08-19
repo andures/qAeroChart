@@ -8,8 +8,8 @@ feedback using a rubber band and emits signals to communicate with the
 ProfileCreationDialog.
 """
 
-from qgis.PyQt.QtCore import pyqtSignal, QRectF
-from qgis.PyQt.QtGui import QColor, QFont, QPen, QBrush
+from qgis.PyQt.QtCore import pyqtSignal, QRectF, QPointF
+from qgis.PyQt.QtGui import QColor, QFont, QPen, QBrush, QPolygonF
 from ..utils.logger import log
 from ..utils.qt_compat import Qt
 from qgis.core import QgsPointXY, QgsGeometry
@@ -86,6 +86,52 @@ class _PreviewLabelCanvasItem(QgsMapCanvasItem):
         return QRectF(self._canvas_ref.rect())
 
 
+class _PreviewArrowCanvasItem(QgsMapCanvasItem):
+    """Lightweight canvas overlay that paints direction arrows at map positions (Issue #100).
+
+    Same shape as ``_PreviewLabelCanvasItem`` — works on both QGIS 3 and QGIS 4.
+    """
+
+    def __init__(self, canvas, arrows: list):
+        """
+        Args:
+            canvas: QgsMapCanvas instance.
+            arrows: list of dicts with 'pos' (QgsPointXY) and 'angle' (degrees, 0=North, clockwise).
+        """
+        super().__init__(canvas)
+        self._canvas_ref = canvas
+        self._arrows = arrows
+        self._brush = QBrush(QColor(0, 120, 215, 220))
+        self._pen = QPen(QColor(0, 60, 120, 255))
+        self.updateCanvas()
+
+    def paint(self, painter, option, widget):
+        if not painter:
+            return
+        size = 8.0
+        triangle = QPolygonF([
+            QPointF(0.0, -size),
+            QPointF(-size * 0.6, size * 0.6),
+            QPointF(size * 0.6, size * 0.6),
+        ])
+        painter.setBrush(self._brush)
+        painter.setPen(self._pen)
+        for entry in self._arrows:
+            pos = entry.get('pos')
+            angle = entry.get('angle', 0.0)
+            if not isinstance(pos, QgsPointXY):
+                continue
+            pt = self.toCanvasCoordinates(pos)
+            painter.save()
+            painter.translate(pt.x(), pt.y())
+            painter.rotate(angle)
+            painter.drawPolygon(triangle)
+            painter.restore()
+
+    def boundingRect(self):
+        return QRectF(self._canvas_ref.rect())
+
+
 class ProfilePointTool(QgsMapTool):
     """
     Map tool for selecting profile origin points.
@@ -119,6 +165,7 @@ class ProfilePointTool(QgsMapTool):
         self.preview_grid_band = None
         self._preview_generator = None  # Callable taking QgsPointXY -> dict with polylines
         self.preview_label_items = []
+        self.preview_arrow_items = []
         self._last_hover_point = None
 
         # Initialize rubber band for visual feedback
@@ -164,6 +211,18 @@ class ProfilePointTool(QgsMapTool):
         # Hide initially
         self.rubber_band.hide()
 
+    def _snapped_point(self, pos):
+        """Return the snapped map point for *pos* when QGIS snapping is active and finds a
+        match, otherwise the raw unsnapped map coordinate (Issue #100).
+        """
+        try:
+            match = self.canvas.snappingUtils().snapToMap(pos)
+            if match.isValid():
+                return match.point()
+        except Exception:
+            pass
+        return self.toMapCoordinates(pos)
+
     def canvasPressEvent(self, event):
         """
         Handle mouse press event on canvas.
@@ -186,8 +245,9 @@ class ProfilePointTool(QgsMapTool):
         if event.button() != Qt.LeftButton:
             return
 
-        # Get the clicked point in map coordinates
-        point = self.toMapCoordinates(event.pos())
+        # Get the clicked point in map coordinates, snapped to nearby features
+        # when QGIS's project-wide snapping is active (Issue #100).
+        point = self._snapped_point(event.pos())
 
         log(f"Origin point selected at X={point.x():.2f}, Y={point.y():.2f}")
 
@@ -209,7 +269,7 @@ class ProfilePointTool(QgsMapTool):
         try:
             if not self._preview_generator:
                 return
-            point = self.toMapCoordinates(event.pos())
+            point = self._snapped_point(event.pos())
             # Track last hovered map point for potential fallback if user doesn't click
             try:
                 self._last_hover_point = QgsPointXY(point.x(), point.y())
@@ -273,6 +333,14 @@ class ProfilePointTool(QgsMapTool):
                 label_item = _PreviewLabelCanvasItem(self.canvas, tick_labels)
                 label_item.show()
                 self.preview_label_items.append(label_item)
+
+            # Update direction arrows (Issue #100)
+            self._clear_preview_arrows()
+            direction_arrows = preview.get('direction_arrows', [])
+            if direction_arrows:
+                arrow_item = _PreviewArrowCanvasItem(self.canvas, direction_arrows)
+                arrow_item.show()
+                self.preview_arrow_items.append(arrow_item)
         except Exception as e:
             log(f"preview failed: {e}", "WARNING")
 
@@ -318,6 +386,7 @@ class ProfilePointTool(QgsMapTool):
             self.preview_grid_band.reset(_GEOM_LINE)
             self.preview_grid_band.hide()
         self._clear_preview_labels()
+        self._clear_preview_arrows()
 
     def activate(self):
         """
@@ -408,6 +477,20 @@ class ProfilePointTool(QgsMapTool):
             except Exception:
                 pass
         self.preview_label_items = []
+
+    def _clear_preview_arrows(self):
+        """Remove and clear all preview direction-arrow items from canvas (Issue #100)."""
+        if not self.preview_arrow_items:
+            return
+        for item in self.preview_arrow_items:
+            try:
+                item.hide()
+                scene = self.canvas.scene()
+                if scene and item.scene():
+                    scene.removeItem(item)
+            except Exception:
+                pass
+        self.preview_arrow_items = []
 
 
 class ProfilePointToolManager:

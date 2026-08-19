@@ -1,6 +1,8 @@
 ﻿# -*- coding: utf-8 -*-
 """Nominal Holding dock widget — mirrors VerticalScaleDockWidget / HorizontalScaleDockWidget (Issue #94)."""
 
+import math
+
 from qgis.PyQt import QtWidgets
 from qgis.PyQt.QtWidgets import (
     QLabel,
@@ -28,7 +30,7 @@ from qgis.core import QgsPointXY
 from qgis.utils import iface
 
 from .utils.qt_compat import Qt, MsgLevel
-from .core.holding import HoldingParameters, build_holding
+from .core.holding import HoldingParameters, build_holding, fix_and_track_from_line
 from .core.holding_layer_manager import HoldingLayerManager
 
 
@@ -162,24 +164,76 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         layout.addWidget(title)
 
         # ── Fix point ────────────────────────────────────────────────
+        # Two input modes (Issue #100): derive the fix + inbound track from a selected
+        # line feature (default, matches qPANSOPY), or pick a point on the map and type
+        # the inbound track by hand (the original #94 flow).
         grp_fix = QGroupBox("Fix point")
-        form_fix = QFormLayout(grp_fix)
-        form_fix.setHorizontalSpacing(6)
-        form_fix.setVerticalSpacing(4)
+        form_fix = QVBoxLayout(grp_fix)
         form_fix.setContentsMargins(6, 6, 6, 6)
+        form_fix.setSpacing(4)
 
-        self.line_fix = QLineEdit()
-        self.line_fix.setReadOnly(True)
-        self.line_fix.setPlaceholderText("Click 'Select on map'…")
+        mode_row = QHBoxLayout()
+        self.radio_fix_line = QRadioButton("From line feature")
+        self.radio_fix_point = QRadioButton("Select on map")
+        self._fix_mode_group = QButtonGroup(self)
+        self._fix_mode_group.addButton(self.radio_fix_line)
+        self._fix_mode_group.addButton(self.radio_fix_point)
+        mode_row.addWidget(self.radio_fix_line)
+        mode_row.addWidget(self.radio_fix_point)
+        form_fix.addLayout(mode_row)
+
+        self.fix_stack = QStackedWidget()
+
+        # -- Page 0: line-select mode --
+        page_line = QWidget()
+        line_lay = QVBoxLayout(page_line)
+        line_lay.setContentsMargins(0, 0, 0, 0)
+        line_lay.setSpacing(4)
+        end_row = QHBoxLayout()
+        self.radio_line_end = QRadioButton("Use line end")
+        self.radio_line_start = QRadioButton("Use line start")
+        self.radio_line_end.setChecked(True)  # matches qPANSOPY's last-vertex convention
+        self._line_end_group = QButtonGroup(self)
+        self._line_end_group.addButton(self.radio_line_end)
+        self._line_end_group.addButton(self.radio_line_start)
+        end_row.addWidget(self.radio_line_end)
+        end_row.addWidget(self.radio_line_start)
+        line_lay.addLayout(end_row)
+        btn_use_line = QPushButton("Use selected line feature")
+        btn_use_line.clicked.connect(self._pick_fix_from_line)
+        line_lay.addWidget(btn_use_line)
+        self.fix_stack.addWidget(page_line)
+
+        # -- Page 1: point-pick mode (original #94 flow) --
+        page_point = QWidget()
+        point_lay = QHBoxLayout(page_point)
+        point_lay.setContentsMargins(0, 0, 0, 0)
         fix_btn = QPushButton("Select on map")
         fix_btn.clicked.connect(self._pick_fix)
-        fix_row = QHBoxLayout()
-        fix_row.addWidget(self.line_fix)
-        fix_row.addWidget(fix_btn)
-        fix_container = QWidget()
-        fix_container.setLayout(fix_row)
-        form_fix.addRow("Fix", fix_container)
+        point_lay.addWidget(fix_btn)
+        point_lay.addStretch(1)
+        self.fix_stack.addWidget(page_point)
+
+        form_fix.addWidget(self.fix_stack)
+
+        # Shared read-only coordinate display — populated by either mode
+        coord_row = QHBoxLayout()
+        coord_row.addWidget(QLabel("Fix:"))
+        self.line_fix = QLineEdit()
+        self.line_fix.setReadOnly(True)
+        self.line_fix.setPlaceholderText("No fix selected yet…")
+        coord_row.addWidget(self.line_fix)
+        form_fix.addLayout(coord_row)
+
         layout.addWidget(grp_fix)
+
+        self.radio_fix_line.toggled.connect(
+            lambda checked: self.fix_stack.setCurrentIndex(0) if checked else None
+        )
+        self.radio_fix_point.toggled.connect(
+            lambda checked: self.fix_stack.setCurrentIndex(1) if checked else None
+        )
+        self.radio_fix_line.setChecked(True)  # default mode (Issue #100)
 
         # ── Flight parameters ─────────────────────────────────────────
         grp_params = QGroupBox("Parameters")
@@ -220,7 +274,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         )
         form_params.addRow(
             "ISA var (°C)",
-            self._spin_field("isa", QDoubleSpinBox, -50.0, 50.0, 0.0, 1.0),
+            self._spin_field("isa", QDoubleSpinBox, -50.0, 50.0, 15.0, 1.0),
         )
         form_params.addRow(
             "Bank angle (°)",
@@ -300,10 +354,12 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.dspin_track.setValue(180.0)
         self.dspin_ias.setValue(195.0)
         self.dspin_alt.setValue(10000.0)
-        self.dspin_isa.setValue(0.0)
+        self.dspin_isa.setValue(15.0)
         self.dspin_bank.setValue(25.0)
         self.dspin_leg.setValue(1.0)
         self.radio_r.setChecked(True)
+        self.radio_fix_line.setChecked(True)
+        self.radio_line_end.setChecked(True)
         self.origin_point = None
         self.line_fix.clear()
         self._update_computed()
@@ -454,6 +510,43 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.line_fix.setText(f"{point.x():.3f}, {point.y():.3f}")
         self._restore_map_tool()
 
+    def _pick_fix_from_line(self):
+        """Derive the fix point and inbound track from the active layer's selected line
+        feature (Issue #100) — mirrors qPANSOPY's holding tool input flow, with an added
+        choice of which end of the line to use as the fix (qPANSOPY hardcodes the last vertex).
+        """
+        layer = iface.activeLayer()
+        if not layer or layer.selectedFeatureCount() != 1:
+            iface.messageBar().pushMessage(
+                "qAeroChart",
+                "Select exactly one line feature in the active layer first.",
+                level=MsgLevel.Warning, duration=4,
+            )
+            return
+        feature = layer.selectedFeatures()[0]
+        geom = feature.geometry()
+        polyline = geom.asPolyline() if geom else []
+        if len(polyline) < 2:
+            iface.messageBar().pushMessage(
+                "qAeroChart",
+                "Selected feature is not a line with at least 2 vertices.",
+                level=MsgLevel.Warning, duration=4,
+            )
+            return
+        points = [(pt.x(), pt.y()) for pt in polyline]
+        use_end = self.radio_line_end.isChecked()
+        try:
+            fix_x, fix_y, track = fix_and_track_from_line(points, use_end=use_end)
+        except ValueError as e:
+            iface.messageBar().pushMessage(
+                "qAeroChart", str(e), level=MsgLevel.Warning, duration=4,
+            )
+            return
+        self.origin_point = QgsPointXY(fix_x, fix_y)
+        self.line_fix.setText(f"{fix_x:.3f}, {fix_y:.3f}")
+        self.dspin_track.setValue(track % 360.0)
+        self._update_computed()
+
     def _restore_map_tool(self):
         if self.tool_manager:
             try:
@@ -470,6 +563,17 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
 
             params = self._collect_params(fix_x=hover_point.x(), fix_y=hover_point.y())
             result = build_holding(params)
+
+            # Direction arrows on the inbound/outbound legs (Issue #100) — the two
+            # straight-line segments already carry the actual direction of flight.
+            direction_arrows = []
+            for seg_type, pts in result.segments:
+                if seg_type != "line":
+                    continue
+                p0, p1 = pts[0], pts[1]
+                mid = QgsPointXY((p0.x + p1.x) / 2.0, (p0.y + p1.y) / 2.0)
+                bearing = math.degrees(math.atan2(p1.x - p0.x, p1.y - p0.y)) % 360.0
+                direction_arrows.append({"pos": mid, "angle": bearing})
 
             all_pts: list[QgsPointXY] = []
             for seg_type, pts in result.segments:
@@ -496,6 +600,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                 "tick_segments": [],
                 "grid_segments": [],
                 "tick_labels": [],
+                "direction_arrows": direction_arrows,
             }
         except Exception:
             return {"profile_line": [], "tick_segments": [], "tick_labels": []}

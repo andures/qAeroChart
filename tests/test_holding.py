@@ -8,6 +8,7 @@ from qAeroChart.core.holding import (
     _offset,
     _tas_calc,
     build_holding,
+    fix_and_track_from_line,
 )
 
 
@@ -147,3 +148,53 @@ class TestBuildHolding:
         assert r.radius_nm > 0
         assert r.leg_nm > 0
         assert r.rate_deg_s > 0
+
+
+# ---------------------------------------------------------------------------
+# HoldingParameters defaults (Issue #100)
+# ---------------------------------------------------------------------------
+
+class TestDefaults:
+    def test_isa_var_defaults_to_15(self):
+        """Issue #100: ISA default changed from 0 to 15 per explicit user confirmation
+        (note: this diverges from qPANSOPY's own 0-deviation default, see PR doc)."""
+        p = HoldingParameters(fix_x=0.0, fix_y=0.0, inbound_track=180.0, turn='R')
+        assert p.isa_var == 15.0
+
+
+# ---------------------------------------------------------------------------
+# fix_and_track_from_line (Issue #100)
+# ---------------------------------------------------------------------------
+
+class TestFixAndTrackFromLine:
+    def test_use_end_north_south_line(self):
+        """Line from (0,0) to (0,1000) — last vertex is north of the previous one,
+        so the inbound track (arrival direction) is due North (0°)."""
+        fix_x, fix_y, track = fix_and_track_from_line([(0.0, 0.0), (0.0, 1000.0)], use_end=True)
+        assert (fix_x, fix_y) == (0.0, 1000.0)
+        assert abs(track - 0.0) < 0.01
+
+    def test_use_start_north_south_line(self):
+        """Same line, but fix at the start vertex — arrival direction is due South (180°)."""
+        fix_x, fix_y, track = fix_and_track_from_line([(0.0, 0.0), (0.0, 1000.0)], use_end=False)
+        assert (fix_x, fix_y) == (0.0, 0.0)
+        assert abs(track - 180.0) < 0.01
+
+    def test_use_end_east_west_line(self):
+        """Line from (0,0) to (1000,0) — last vertex is east, arrival direction is due East (90°)."""
+        fix_x, fix_y, track = fix_and_track_from_line([(0.0, 0.0), (1000.0, 0.0)], use_end=True)
+        assert (fix_x, fix_y) == (1000.0, 0.0)
+        assert abs(track - 90.0) < 0.01
+
+    def test_uses_adjacent_vertex_not_far_end(self):
+        """A bent 3-point line: use_end must derive the bearing from the LAST SEGMENT
+        (points[-2] -> points[-1]), not from the far end of the line."""
+        points = [(0.0, 0.0), (500.0, 500.0), (500.0, 1500.0)]
+        fix_x, fix_y, track = fix_and_track_from_line(points, use_end=True)
+        assert (fix_x, fix_y) == (500.0, 1500.0)
+        # Last segment (500,500)->(500,1500) is due North
+        assert abs(track - 0.0) < 0.01
+
+    def test_degenerate_line_raises(self):
+        with pytest.raises(ValueError):
+            fix_and_track_from_line([(0.0, 0.0)], use_end=True)

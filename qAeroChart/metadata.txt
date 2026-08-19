@@ -1,45 +1,19 @@
-# This file contains metadata for your plugin.
-
-# Mandatory items:
-
 [general]
 name=qAeroChart
-qgisMinimumVersion=3.0
+qgisMinimumVersion=3.34
 qgisMaximumVersion=4.99
-description=ICAO Aeronautical Chart Plugin - Create approach profiles and aeronautical charts (QGIS 3/4, Qt5/Qt6)
+description=ICAO Aeronautical Chart Plugin - Create approach profiles and aeronautical charts
 version=0.1.0
 author=FLYGHT7
-email=https://github.com/FLYGHT7
+email=info@flyght7.com
 
-about=Plugin for creating aeronautical charts following ICAO Annex 14 and Doc 8697 standards.
-    Compatible with QGIS 3.x (Qt5) and QGIS 4.x (Qt6).
-
-    Features:
-    - Approach profile creation (MAPt, FAF, IF points)
-    - Automatically organized memory layers in groups
-    - JSON configuration save/load system
-    - Interactive map point selection tool
-    - ICAO-compliant chart generation
-    - Qt5/Qt6 compatibility via internal abstraction layer
-
-    Capabilities:
-    * Profile Creation - Build approach profiles with standard ICAO fix points
-    * Automatic layer group management
-    * Input parameter validation
-    * Configuration export and import
+about=Plugin for creating aeronautical charts following ICAO Annex 14 and Doc 8697 standards and industry best practices
 
 tracker=https://github.com/FLYGHT7/qAeroChart/issues
 repository=https://github.com/FLYGHT7/qAeroChart
-# End of mandatory metadata
-
-# Recommended items:
 
 hasProcessingProvider=no
-# Uncomment the following line and add your changelog:
-changelog=0.1.0 - Initial Release
-
-# Tags are comma separated with spaces allowed
-tags=aviation,aeronautical,ICAO,charts,approach,profile,annex14,obstacles,surfaces,Qt5,Qt6,QGIS4
+tags=aviation,aeronautical,ICAO,charts,approach,profile,annex4,obstacles,surfaces,pansops
 
 homepage=https://flyght7.com/qgis-opensource-aeronautical-charting-qaerochart/
 category=Vector
@@ -47,13 +21,18 @@ icon=icons/icon.png
 # experimental flag
 experimental=True
 
-# deprecated flag (applies to the whole plugin, not just to the uploaded version)
-deprecated=False
-
-# Since QGIS 3.8, a comma separated list of plugins to be installed
-# (or upgraded) can be specified.
-# Check the documentation for more information.
-# plugin_dependencies=
-
-# If the plugin can run on QGIS Server.
-server=False
+changelog=
+    Version 0.1.0:
+    - Distance/Altitude Automatic
+    - Holding nominal should have similar functionality to qPANSOPY
+	Version 0.0.1:
+    - Approach profile creation (MAPt, FAF, IF points)
+    - Automatically organized memory layers in groups
+    - JSON configuration save/load system
+    - Interactive map point selection tool
+    - Qt5/Qt6 compatibility via internal abstraction layer
+    - Profile Creation 
+	- Build approach profiles with standard ICAO fix points
+    - Automatic layer group management
+    - Input parameter validation
+    - Configuration export and import

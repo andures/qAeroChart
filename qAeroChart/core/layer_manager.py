@@ -1989,7 +1989,7 @@ class LayerManager:
                         )
                         import math
                         deg = math.degrees(math.atan(grad_percent/100.0))
-                        text = f"{deg:.1f}Â° ({grad_percent:.1f}%)"
+                        text = f"{deg:.1f}° ({grad_percent:.1f}%)"
                         mid_nm = (float(p1.get('distance_nm', 0)) + float(p2.get('distance_nm', 0))) / 2.0
                         # Keep visual offset roughly constant despite VE
                         mid_ft_rel = (

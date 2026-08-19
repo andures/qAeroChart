@@ -955,7 +955,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                         ui_max = float(form.spinBox_axis_max_nm.value())
                         if ui_max > max_nm:
                             max_nm = ui_max
-                except Exception:
+                except Exception:  # nosec B110 - optional adjustment; existing state is kept if this fails
                     pass
                 # ticks (short) â€“ keep visual height ~200 m after VE
                 markers = geometry.create_distance_markers(max_nm, marker_height_m=(200.0/10.0))
@@ -1098,7 +1098,7 @@ class QAeroChartDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
                             'to_nm': float(p2.get('distance_nm') or 0),
                             'moca_ft': float(mft)
                         })
-                    except Exception:
+                    except Exception:  # nosec B112 - skip malformed entry; loop continues building the list
                         continue
         except Exception:
             moca_segments = []

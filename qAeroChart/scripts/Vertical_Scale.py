@@ -224,7 +224,7 @@ def run_vertical_scale(
         add_label(bottom, "VERTICAL", "lbl_vertical")
         add_label(bottom.project(tick_len * 1.5, angle), "SCALE", "lbl_scale")
         add_label(bottom.project(tick_len * 3.0, angle), f"1:{int(scale_denominator):,}".replace(',', ' '), "lbl_ratio")
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # Basic styling: black thin lines
@@ -234,7 +234,7 @@ def run_vertical_scale(
         sym.setColor(QColor("black"))
         sym.setWidth(0.25)
         line_layer.triggerRepaint()
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # Make point layer invisible (only labels visible)
@@ -244,7 +244,7 @@ def run_vertical_scale(
         try:
             pt_sym = QgsMarkerSymbol.createSimple({"color": "transparent", "size": "0"})
             label_layer.setRenderer(QgsSingleSymbolRenderer(pt_sym))
-        except Exception:
+        except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
             pass
 
     # Enable labeling for txt_label field so numbers/headers render
@@ -270,7 +270,7 @@ def run_vertical_scale(
         label_layer.setLabelsEnabled(True)
         label_layer.setLabeling(QgsVectorLayerSimpleLabeling(pal))
         label_layer.triggerRepaint()
-    except Exception:
+    except Exception:  # nosec B110 - cosmetic styling/label step; drawing continues without it
         pass
 
     # Add to project under a group

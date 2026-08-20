@@ -25,6 +25,9 @@ changelog=
     Version 0.1.0:
     - Distance/Altitude Automatic
     - Holding nominal should have similar functionality to qPANSOPY
+	- profile_point_symbol change some attribute names
+    - Vertical Scale default azimuth should be 0
+    - profile_carto_label degree symbol strange characters
 	Version 0.0.1:
     - Approach profile creation (MAPt, FAF, IF points)
     - Automatically organized memory layers in groups

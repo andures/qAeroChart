@@ -94,6 +94,7 @@ class OcaHTableDialog(QtWidgets.QDialog):
         self.data_table.verticalHeader().setVisible(False)
         self.data_table.horizontalHeader().setStretchLastSection(True)
         self.data_table.setEditTriggers(QAbstractItemView.AllEditTriggers)
+        self.data_table.setMinimumHeight(120)
         data_vlayout.addWidget(self.data_table, stretch=1)
 
         btn_row = QtWidgets.QHBoxLayout()
@@ -107,19 +108,31 @@ class OcaHTableDialog(QtWidgets.QDialog):
         btn_row.addStretch(1)
         data_vlayout.addLayout(btn_row)
 
-        root.addWidget(data_grp, stretch=1)
-
         # ── Preview ──────────────────────────────────────────────────
+        preview_container = QtWidgets.QWidget()
+        preview_vlayout = QtWidgets.QVBoxLayout(preview_container)
+        preview_vlayout.setContentsMargins(0, 0, 0, 0)
+        preview_vlayout.setSpacing(4)
+
         preview_lbl = QtWidgets.QLabel("Preview")
         preview_lbl.setStyleSheet("font-weight: bold;")
-        root.addWidget(preview_lbl)
+        preview_vlayout.addWidget(preview_lbl)
 
         self.preview = QtWidgets.QTableWidget()
         self.preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.preview.horizontalHeader().setStretchLastSection(True)
         self.preview.verticalHeader().setVisible(False)
         self.preview.setAlternatingRowColors(True)
-        root.addWidget(self.preview, stretch=1)
+        self.preview.setMinimumHeight(80)
+        preview_vlayout.addWidget(self.preview, stretch=1)
+
+        # ── Procedure rows / Preview splitter (drag to resize, Issue #121) ──
+        splitter = QtWidgets.QSplitter(Qt.Vertical)
+        splitter.addWidget(data_grp)
+        splitter.addWidget(preview_container)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        root.addWidget(splitter, stretch=1)
 
         # ── Layout placement ─────────────────────────────────────────
         placement_grp = QgsCollapsibleGroupBox("Layout placement")

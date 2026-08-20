@@ -17,6 +17,11 @@ from ..core.oca_h_table import (
     compute_table,
 )
 
+try:
+    from qgis.gui import QgsCollapsibleGroupBox
+except ImportError:
+    QgsCollapsibleGroupBox = QtWidgets.QGroupBox  # fallback fuera de QGIS
+
 _DEFAULT_ROWS = [
     ("ILS CAT I", "324 (161)", "334 (171)", "346 (183)", "361 (198)"),
     ("LOC", "600 (440)", "600 (440)", "600 (440)", "600 (440)"),
@@ -117,7 +122,9 @@ class OcaHTableDialog(QtWidgets.QDialog):
         root.addWidget(self.preview, stretch=1)
 
         # ── Layout placement ─────────────────────────────────────────
-        placement_grp = QtWidgets.QGroupBox("Layout placement")
+        placement_grp = QgsCollapsibleGroupBox("Layout placement")
+        placement_grp.setCollapsed(True)
+        placement_grp.setSaveCollapsedState(False)
         pl = QtWidgets.QGridLayout(placement_grp)
         pl.setHorizontalSpacing(8)
         pl.setVerticalSpacing(6)

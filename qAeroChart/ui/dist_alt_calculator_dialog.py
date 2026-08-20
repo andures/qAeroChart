@@ -15,6 +15,11 @@ except ImportError:
 from ..utils.qt_compat import Qt, QAbstractItemView
 from ..core.dist_alt_calculator import DistAltConfig, compute_summary, compute_table
 
+try:
+    from qgis.gui import QgsCollapsibleGroupBox
+except ImportError:
+    QgsCollapsibleGroupBox = QtWidgets.QGroupBox  # fallback fuera de QGIS
+
 
 class DistAltCalculatorDialog(QtWidgets.QDialog):
     """Interactive builder for CDFA Distance/Altitude Calculator tables with live preview."""
@@ -127,7 +132,9 @@ class DistAltCalculatorDialog(QtWidgets.QDialog):
         root.addWidget(self.label_summary)
 
         # ── Layout placement ─────────────────────────────────────────────
-        placement_grp = QtWidgets.QGroupBox("Layout placement")
+        placement_grp = QgsCollapsibleGroupBox("Layout placement")
+        placement_grp.setCollapsed(True)
+        placement_grp.setSaveCollapsedState(False)
         pl = QtWidgets.QGridLayout(placement_grp)
         pl.setHorizontalSpacing(8)
         pl.setVerticalSpacing(6)

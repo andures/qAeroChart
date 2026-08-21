@@ -64,14 +64,17 @@ def build_sector_ring(
     """Build a closed polygon ring for one annular sector (donut wedge).
 
     Sweeps clockwise from ``start_true`` to ``end_true`` (compass bearings,
-    0°=North). A full circle (``start_true == end_true``) is handled without a
-    special case: the arc's first and last vertices coincide, so the ring
-    closes seamlessly. When ``inner_r_m`` is 0 the ring is a plain wedge (or
-    full circle) fanning out from the center point instead of a donut.
+    0°=North). When ``inner_r_m`` is 0 the ring is a plain wedge fanning out
+    from the center point; a full-circle plain wedge (``start_true ==
+    end_true``) skips the center point entirely and returns just the closed
+    arc, since the arc's first and last vertices already coincide — adding
+    the center point in that case would draw a spurious spoke from the
+    center to the circle's edge.
     """
     span = (end_true - start_true) % 360.0
     if span == 0.0:
         span = 360.0
+    is_full_circle = span == 360.0
     steps = max(8, round(span / 3.0))
 
     start_rad = math.radians(90.0 - start_true)
@@ -89,8 +92,12 @@ def build_sector_ring(
 
     outer_pts = _arc(outer_r_m)
     if inner_r_m > 0.0:
+        # Full-circle donuts still join the outer/inner arcs at a shared seam
+        # vertex here, which can render as a thin seam line at that bearing.
         inner_pts = list(reversed(_arc(inner_r_m)))
         return outer_pts + inner_pts + [outer_pts[0]]
+    if is_full_circle:
+        return outer_pts
     return [(center_x, center_y)] + outer_pts + [(center_x, center_y)]
 
 

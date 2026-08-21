@@ -27,7 +27,7 @@ from qgis.core import (
 )
 
 from ..utils.logger import log
-from ..utils.qt_compat import QColor, QVariant
+from ..utils.qt_compat import MsgLevel, QColor, QVariant
 from .msa import MSASectorGeometry
 
 
@@ -143,13 +143,49 @@ class MsaLayerManager:
     # Internals
     # ------------------------------------------------------------------
 
+    def _schema_matches(self, layer: QgsVectorLayer) -> bool:
+        """True if *layer*'s fields match ``_FIELDS`` in name and order.
+
+        ``add_sectors`` writes attributes positionally, so a layer left over
+        from an older schema (e.g. the original standalone script's 9-field
+        preview layer, or an earlier plugin version) must not be silently
+        reused — that produces attribute count/type mismatches at write time.
+        """
+        existing_names = [f.name() for f in layer.fields()]
+        expected_names = [f.name() for f in self._FIELDS]
+        return existing_names == expected_names
+
     def _get_or_create(
         self, iface, layer_name: str, *, is_preview: bool, add_to_group: bool
     ) -> QgsVectorLayer:
         project = QgsProject.instance()
         existing = project.mapLayersByName(layer_name)
         if existing:
-            return existing[0]
+            if self._schema_matches(existing[0]):
+                return existing[0]
+            if is_preview:
+                # Preview layers are ephemeral scratch data — safe to discard
+                # and recreate with the current schema.
+                project.removeMapLayer(existing[0].id())
+                log(f"MsaLayerManager: discarded stale-schema '{layer_name}'", "WARNING")
+            else:
+                # Never silently delete a user's committed MSA data — rename
+                # the stale layer aside and create a fresh one instead.
+                legacy_name = f"{layer_name} (legacy schema)"
+                existing[0].setName(legacy_name)
+                log(
+                    f"MsaLayerManager: renamed stale-schema '{layer_name}' to "
+                    f"'{legacy_name}'", "WARNING",
+                )
+                if iface is not None:
+                    iface.messageBar().pushMessage(
+                        "qAeroChart",
+                        f"Existing '{layer_name}' layer had an outdated field "
+                        f"layout and was renamed to '{legacy_name}'; a new "
+                        f"'{layer_name}' layer was created.",
+                        level=MsgLevel.Warning,
+                        duration=6,
+                    )
 
         crs = iface.mapCanvas().mapSettings().destinationCrs()
         uri = f"Polygon?crs={crs.authid()}"

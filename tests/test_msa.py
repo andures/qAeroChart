@@ -72,12 +72,19 @@ class TestBuildSectorRing:
         """start == end bearing should sweep a full 360° circle, closing without a gap."""
         ring = build_sector_ring(0.0, 0.0, 45.0, 45.0, 1000.0)
         # First and last arc vertices coincide (no visible slit for the full-circle case)
-        assert math.hypot(ring[1][0] - ring[-2][0], ring[1][1] - ring[-2][1]) < 1e-6
+        assert math.hypot(ring[0][0] - ring[-1][0], ring[0][1] - ring[-1][1]) < 1e-6
 
     def test_full_circle_radii_constant(self):
         ring = build_sector_ring(0.0, 0.0, 0.0, 0.0, 1000.0)
-        radii = [math.hypot(x, y) for x, y in ring[1:-1]]
+        radii = [math.hypot(x, y) for x, y in ring]
         assert all(abs(r - 1000.0) < 1e-6 for r in radii)
+
+    def test_full_circle_plain_wedge_has_no_center_point(self):
+        """A full-circle plain wedge (inner radius 0) must not draw a spoke
+        from the center — regression test for the ported-script bug where
+        the ring always closed through the center point."""
+        ring = build_sector_ring(0.0, 0.0, 0.0, 0.0, 1000.0)
+        assert (0.0, 0.0) not in ring
 
     def test_wraparound_span(self):
         """A sector from 350° to 10° should sweep 20°, not -340°."""

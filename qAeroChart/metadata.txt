@@ -23,6 +23,8 @@ experimental=True
 
 changelog=
     Version 0.1.0:
+	- bandit correction 
+    - dock panel overflow bug 
     - Distance/Altitude Automatic
     - Holding nominal should have similar functionality to qPANSOPY
 	- profile_point_symbol change some attribute names

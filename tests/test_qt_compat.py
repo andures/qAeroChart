@@ -41,6 +41,12 @@ class TestQAbstractItemViewCompat:
     def test_extended_selection_accessible(self):
         assert QAbstractItemView.ExtendedSelection is not None
 
+    def test_single_selection_accessible(self):
+        assert QAbstractItemView.SingleSelection is not None
+
+    def test_select_rows_accessible(self):
+        assert QAbstractItemView.SelectRows is not None
+
 
 class TestQVariantCompat:
     def test_string_accessible(self):

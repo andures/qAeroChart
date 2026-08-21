@@ -193,6 +193,16 @@ class _QAbstractItemViewCompat:
         or _QAbstractItemView.EditTrigger.NoEditTriggers
     )
 
+    SingleSelection = (
+        getattr(_QAbstractItemView, "SingleSelection", None)
+        or _QAbstractItemView.SelectionMode.SingleSelection
+    )
+
+    SelectRows = (
+        getattr(_QAbstractItemView, "SelectRows", None)
+        or _QAbstractItemView.SelectionBehavior.SelectRows
+    )
+
 
 QAbstractItemView = _QAbstractItemViewCompat
 

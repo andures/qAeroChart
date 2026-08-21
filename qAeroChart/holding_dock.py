@@ -20,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QSpacerItem,
     QRadioButton,
     QButtonGroup,
+    QCheckBox,
     QShortcut,
     QInputDialog,
     QMenu,
@@ -50,6 +51,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.origin_point = None
         self.last_params = None
         self.run_history: list[dict] = []
+        self._editing_index: int | None = None
         self._layer_manager = HoldingLayerManager()
 
         self._build_ui()
@@ -108,7 +110,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.btn_new = QPushButton("+ New Holding")
         self.btn_new.setMinimumHeight(35)
         self.btn_new.setStyleSheet("background-color: #CC00CC; color: white; font-weight: bold;")
-        self.btn_run_selected = QPushButton("Re-run")
+        self.btn_run_selected = QPushButton("Edit")
         self.btn_run_selected.setMinimumHeight(35)
         self.btn_delete = QPushButton("Delete")
         self.btn_delete.setMinimumHeight(35)
@@ -117,7 +119,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.btn_delete.setEnabled(False)
 
         self.btn_new.clicked.connect(self._on_new_clicked)
-        self.btn_run_selected.clicked.connect(self._on_run_selected)
+        self.btn_run_selected.clicked.connect(self._on_edit_selected)
         self.btn_delete.clicked.connect(self._on_delete_selected)
         menu_buttons.addWidget(self.btn_new)
         menu_buttons.addWidget(self.btn_run_selected)
@@ -133,6 +135,12 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         form_layout = QVBoxLayout(self.page_form)
         form_layout.setAlignment(Qt.AlignTop)
         form_layout.addLayout(self._build_form_fields())
+
+        self.chk_save_as_new = QCheckBox("Save as new holding (keep original)")
+        self.chk_save_as_new.setChecked(False)
+        self.chk_save_as_new.setVisible(False)
+        self.chk_save_as_new.toggled.connect(self._on_save_as_new_toggled)
+        form_layout.addWidget(self.chk_save_as_new)
 
         buttons = QHBoxLayout()
         self.btn_run = QPushButton("Create Holding")
@@ -338,6 +346,8 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
 
     def show_menu(self):
         self._restore_map_tool()
+        self._editing_index = None
+        self._update_submit_button_label()
         self.stack.setCurrentWidget(self.page_menu)
         self._update_buttons()
 
@@ -349,6 +359,8 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.show_form()
 
     def _reset_form(self):
+        self._editing_index = None
+        self._update_submit_button_label()
         next_idx = len(self.run_history) + 1
         self.line_name.setText(f"Holding {next_idx:02d}")
         self.dspin_track.setValue(180.0)
@@ -362,6 +374,46 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self.radio_line_end.setChecked(True)
         self.origin_point = None
         self.line_fix.clear()
+        self._update_computed()
+
+    def _update_submit_button_label(self):
+        """Reflect create-vs-edit mode on the form's submit button and the
+        save-as-new checkbox (Issue #101)."""
+        is_editing = self._editing_index is not None
+        self.btn_run.setText("Update Holding" if is_editing else "Create Holding")
+        self.chk_save_as_new.setVisible(is_editing)
+        if not is_editing:
+            self.chk_save_as_new.setChecked(False)
+
+    def _on_save_as_new_toggled(self, checked):
+        """Auto-suggest a distinct name so two holdings don't look identical
+        in the list (Issue #101 follow-up)."""
+        if checked and self._editing_index is not None:
+            original_name = self.run_history[self._editing_index].get("name", "")
+            if original_name and self.line_name.text() == original_name:
+                self.line_name.setText(f"{original_name} (copy)")
+
+    def _load_params_into_form(self, params: dict):
+        """Pre-fill the form with a stored holding's parameters for editing (Issue #101)."""
+        self.line_name.setText(params.get("name", ""))
+        self.dspin_track.setValue(params.get("inbound_track", 180.0))
+        self.dspin_ias.setValue(params.get("ias_kt", 195.0))
+        self.dspin_alt.setValue(params.get("altitude_ft", 10000.0))
+        self.dspin_isa.setValue(params.get("isa_var", 15.0))
+        self.dspin_bank.setValue(params.get("bank_deg", 25.0))
+        self.dspin_leg.setValue(params.get("leg_min", 1.0))
+        (self.radio_l if params.get("turn") == "L" else self.radio_r).setChecked(True)
+
+        fix = params.get("_fix") or {}
+        x, y = fix.get("x"), fix.get("y")
+        if x is not None and y is not None:
+            self.origin_point = QgsPointXY(x, y)
+            self.line_fix.setText(f"{x:.3f}, {y:.3f}")
+        else:
+            self.origin_point = None
+            self.line_fix.clear()
+        # Editing doesn't re-derive the fix from a line feature — show the stored point.
+        self.radio_fix_point.setChecked(True)
         self._update_computed()
 
     def _update_buttons(self):
@@ -409,27 +461,40 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         except IndexError:
             return None
 
-    def _on_run_selected(self):
-        params = self._selected_params()
-        if not params:
+    def _on_edit_selected(self):
+        """Open the form pre-filled with the selected holding's parameters (Issue #101)."""
+        items = self.list_holdings.selectedItems()
+        if not items:
+            return
+        idx = items[0].data(Qt.UserRole)
+        if idx is None:
             return
         try:
-            self._run_params(params)
-        except Exception as e:
-            try:
-                iface.messageBar().pushCritical("qAeroChart", f"Holding error: {e}")
-            except Exception:
-                print(f"Holding ERROR: {e}")
+            params = self.run_history[idx]
+        except IndexError:
+            return
+        self._editing_index = idx
+        self._load_params_into_form(params)
+        self._update_submit_button_label()
+        self.show_form()
 
     def _on_delete_selected(self):
         items = self.list_holdings.selectedItems()
         if not items:
             return
         idx = items[0].data(Qt.UserRole)
+        entry = None
         if idx is not None:
             try:
-                self.run_history.pop(idx)
+                entry = self.run_history.pop(idx)
             except IndexError:
+                pass
+        holding_id = entry.get("holding_id") if entry else None
+        if holding_id:
+            try:
+                layer = self._layer_manager.get_or_create_layer(iface)
+                self._layer_manager.remove_holding(layer, holding_id)
+            except Exception:
                 pass
         self._refresh_history()
         self._update_buttons()
@@ -672,7 +737,20 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         try:
             result = build_holding(hp)
             layer = self._layer_manager.get_or_create_layer(iface)
-            self._layer_manager.add_holding(layer, hp, result)
+
+            # Editing an existing holding normally removes its old geometry before
+            # redrawing (Issue #101) so Update replaces rather than duplicates the
+            # racetrack — unless "Save as new holding" is checked, in which case the
+            # original is left untouched and this submit adds an independent holding
+            # (Issue #101 follow-up: reviewer feedback on comparing multiple versions).
+            editing_index = self._editing_index
+            save_as_new = editing_index is not None and self.chk_save_as_new.isChecked()
+            if editing_index is not None and not save_as_new:
+                old_id = self.run_history[editing_index].get("holding_id")
+                if old_id:
+                    self._layer_manager.remove_holding(layer, old_id)
+
+            holding_id = self._layer_manager.add_holding(layer, hp, result)
 
             # Store in session history
             name = self.line_name.text().strip() or f"Holding {len(self.run_history) + 1:02d}"
@@ -686,8 +764,12 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                 "bank_deg": hp.bank_deg,
                 "leg_min": hp.leg_min,
                 "_fix": {"x": self.origin_point.x(), "y": self.origin_point.y()},
+                "holding_id": holding_id,
             }
-            self.run_history.append(entry)
+            if editing_index is not None and not save_as_new:
+                self.run_history[editing_index] = entry
+            else:
+                self.run_history.append(entry)
             self.last_params = entry
 
             try:

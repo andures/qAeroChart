@@ -158,9 +158,8 @@ class _QtCompat:
     # Window modality ----------------------------------------------------------
     NonModal = getattr(_Qt, "NonModal", None) or _Qt.WindowModality.NonModal
 
-    # Pen styles -----------------------------------------------------------
-    DashLine = getattr(_Qt, "DashLine", None) or _Qt.PenStyle.DashLine
-    SolidLine = getattr(_Qt, "SolidLine", None) or _Qt.PenStyle.SolidLine
+    # Orientation ---------------------------------------------------------------
+    Vertical = getattr(_Qt, "Vertical", None) or _Qt.Orientation.Vertical
 
 
 Qt = _QtCompat

@@ -28,6 +28,13 @@ changelog=
 	- profile_point_symbol change some attribute names
     - Vertical Scale default azimuth should be 0
     - profile_carto_label degree symbol strange characters
+    - Vertical Scale default azimuth should be 0
+    - profile_carto_label degree symbol strange characters
+    - Distance/Altitude Automatic
+    - Holding nominal should have similar functionality to qPANSOPY
+    - Layout tables now have add button to expand/contract placement parameters
+    - MSA generator tool included 
+    - GS/Rate of Descent Table builder allow row reordering
 	Version 0.0.1:
     - Approach profile creation (MAPt, FAF, IF points)
     - Automatically organized memory layers in groups

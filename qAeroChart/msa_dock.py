@@ -282,21 +282,33 @@ class MSADockWidget(QtWidgets.QDockWidget):
         self._signals_connected = False
 
     def _setup_layer_connections(self, layer):
-        if self._monitored_layer:
-            try:
-                self._monitored_layer.geometryChanged.disconnect(self.update_live_preview)
-                self._monitored_layer.featureDeleted.disconnect(self.update_live_preview)
-            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
-                pass
-            self._monitored_layer = None
+        # The whole body is wrapped: during QGIS application shutdown, layers
+        # and the canvas can be torn down out of order relative to pending
+        # Qt signals, so *any* sip-wrapped object touched here — the stored
+        # `self._monitored_layer` or the freshly-signal-provided `layer` —
+        # may already be a dead C++ object. `is not None` (identity check)
+        # never touches the wrapped object; a plain truthiness check does,
+        # and raises RuntimeError("wrapped C/C++ object ... has been
+        # deleted"). Best-effort: if this fires, there is nothing left to
+        # clean up anyway.
+        try:
+            if self._monitored_layer is not None:
+                try:
+                    self._monitored_layer.geometryChanged.disconnect(self.update_live_preview)
+                    self._monitored_layer.featureDeleted.disconnect(self.update_live_preview)
+                except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
+                    pass
+                self._monitored_layer = None
 
-        if layer and layer.type() == layer.VectorLayer:
-            self._monitored_layer = layer
-            try:
-                layer.geometryChanged.connect(self.update_live_preview)
-                layer.featureDeleted.connect(self.update_live_preview)
-            except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
-                pass
+            if layer is not None and layer.type() == layer.VectorLayer:
+                self._monitored_layer = layer
+                try:
+                    layer.geometryChanged.connect(self.update_live_preview)
+                    layer.featureDeleted.connect(self.update_live_preview)
+                except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
+                    pass
+        except RuntimeError:
+            self._monitored_layer = None
 
     def _on_current_layer_changed(self, layer):
         self._setup_layer_connections(layer)
@@ -400,28 +412,46 @@ class MSADockWidget(QtWidgets.QDockWidget):
         if not self.chk_preview.isChecked():
             return
 
-        _layer, feature = self._active_point_feature()
-        if not feature:
-            self._clear_preview_layer()
-            return
+        # Invoked reactively from canvas/layer Qt signals, so it can run
+        # during QGIS application shutdown, when layers/canvas are being torn
+        # down out of order — any sip-wrapped object touched below may
+        # already be a dead C++ object (see _setup_layer_connections). Best
+        # effort: if that happens mid-preview-update, there is nothing useful
+        # left to draw or clean up.
+        try:
+            _layer, feature = self._active_point_feature()
+            if not feature:
+                self._clear_preview_layer()
+                return
 
-        center = feature.geometry().asPoint()
-        is_magnetic, mag_var_signed, is_inbound, ref_north_str, brg_type_str = self._bearing_context()
-        sector_geoms = build_msa_sectors(
-            center.x(), center.y(), self._collect_sectors(),
-            is_magnetic=is_magnetic, mag_var_signed=mag_var_signed, is_inbound=is_inbound,
-        )
+            center = feature.geometry().asPoint()
+            is_magnetic, mag_var_signed, is_inbound, ref_north_str, brg_type_str = self._bearing_context()
+            sector_geoms = build_msa_sectors(
+                center.x(), center.y(), self._collect_sectors(),
+                is_magnetic=is_magnetic, mag_var_signed=mag_var_signed, is_inbound=is_inbound,
+            )
 
-        self._preview_layer = self._layer_manager.get_or_create_preview_layer(iface)
-        self._layer_manager.replace_preview(
-            self._preview_layer, sector_geoms,
-            brg_type_str=brg_type_str, ref_north_str=ref_north_str, mag_var_signed=mag_var_signed,
-        )
-        iface.mapCanvas().refresh()
+            self._preview_layer = self._layer_manager.get_or_create_preview_layer(iface)
+            self._layer_manager.replace_preview(
+                self._preview_layer, sector_geoms,
+                brg_type_str=brg_type_str, ref_north_str=ref_north_str, mag_var_signed=mag_var_signed,
+            )
+            iface.mapCanvas().refresh()
+        except RuntimeError:
+            pass
 
     def _clear_preview_layer(self):
-        if self._preview_layer and QgsProject.instance().mapLayer(self._preview_layer.id()):
-            self._layer_manager.clear_preview(self._preview_layer)
+        # Same sip-staleness hazard as _setup_layer_connections: `is not None`
+        # avoids touching the wrapped object, and the id()/clear_preview calls
+        # are guarded in case the preview layer was deleted from the project
+        # (e.g. manually removed in the Layers panel) since we last stored it.
+        if self._preview_layer is not None:
+            try:
+                if QgsProject.instance().mapLayer(self._preview_layer.id()):
+                    self._layer_manager.clear_preview(self._preview_layer)
+            except RuntimeError:
+                pass  # underlying preview layer object was deleted
+            self._preview_layer = None
         iface.mapCanvas().refresh()
 
     # ------------------------------------------------------------------

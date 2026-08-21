@@ -20,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
     QSpacerItem,
     QRadioButton,
     QButtonGroup,
+    QCheckBox,
     QShortcut,
     QInputDialog,
     QMenu,
@@ -134,6 +135,12 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         form_layout = QVBoxLayout(self.page_form)
         form_layout.setAlignment(Qt.AlignTop)
         form_layout.addLayout(self._build_form_fields())
+
+        self.chk_save_as_new = QCheckBox("Save as new holding (keep original)")
+        self.chk_save_as_new.setChecked(False)
+        self.chk_save_as_new.setVisible(False)
+        self.chk_save_as_new.toggled.connect(self._on_save_as_new_toggled)
+        form_layout.addWidget(self.chk_save_as_new)
 
         buttons = QHBoxLayout()
         self.btn_run = QPushButton("Create Holding")
@@ -370,8 +377,21 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
         self._update_computed()
 
     def _update_submit_button_label(self):
-        """Reflect create-vs-edit mode on the form's submit button (Issue #101)."""
-        self.btn_run.setText("Update Holding" if self._editing_index is not None else "Create Holding")
+        """Reflect create-vs-edit mode on the form's submit button and the
+        save-as-new checkbox (Issue #101)."""
+        is_editing = self._editing_index is not None
+        self.btn_run.setText("Update Holding" if is_editing else "Create Holding")
+        self.chk_save_as_new.setVisible(is_editing)
+        if not is_editing:
+            self.chk_save_as_new.setChecked(False)
+
+    def _on_save_as_new_toggled(self, checked):
+        """Auto-suggest a distinct name so two holdings don't look identical
+        in the list (Issue #101 follow-up)."""
+        if checked and self._editing_index is not None:
+            original_name = self.run_history[self._editing_index].get("name", "")
+            if original_name and self.line_name.text() == original_name:
+                self.line_name.setText(f"{original_name} (copy)")
 
     def _load_params_into_form(self, params: dict):
         """Pre-fill the form with a stored holding's parameters for editing (Issue #101)."""
@@ -718,10 +738,14 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             result = build_holding(hp)
             layer = self._layer_manager.get_or_create_layer(iface)
 
-            # Editing an existing holding: remove its old geometry before redrawing
-            # (Issue #101) so Update replaces rather than duplicates the racetrack.
+            # Editing an existing holding normally removes its old geometry before
+            # redrawing (Issue #101) so Update replaces rather than duplicates the
+            # racetrack — unless "Save as new holding" is checked, in which case the
+            # original is left untouched and this submit adds an independent holding
+            # (Issue #101 follow-up: reviewer feedback on comparing multiple versions).
             editing_index = self._editing_index
-            if editing_index is not None:
+            save_as_new = editing_index is not None and self.chk_save_as_new.isChecked()
+            if editing_index is not None and not save_as_new:
                 old_id = self.run_history[editing_index].get("holding_id")
                 if old_id:
                     self._layer_manager.remove_holding(layer, old_id)
@@ -742,7 +766,7 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
                 "_fix": {"x": self.origin_point.x(), "y": self.origin_point.y()},
                 "holding_id": holding_id,
             }
-            if editing_index is not None:
+            if editing_index is not None and not save_as_new:
                 self.run_history[editing_index] = entry
             else:
                 self.run_history.append(entry)

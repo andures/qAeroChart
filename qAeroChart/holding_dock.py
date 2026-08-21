@@ -494,8 +494,13 @@ class HoldingDockWidget(QtWidgets.QDockWidget):
             try:
                 layer = self._layer_manager.get_or_create_layer(iface)
                 self._layer_manager.remove_holding(layer, holding_id)
-            except Exception:
-                pass
+            except Exception as e:
+                # The history entry is already popped above, so a failure here would
+                # otherwise leave the geometry on the map with no trace in the list.
+                iface.messageBar().pushMessage(
+                    "qAeroChart", f"Could not remove holding from layer: {e}",
+                    level=MsgLevel.Warning, duration=4,
+                )
         self._refresh_history()
         self._update_buttons()
 

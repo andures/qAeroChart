@@ -784,6 +784,22 @@ class QAeroChart:
 
     # --------------------------------------------------------------------------
 
+    def _tabify_with_existing_qaerochart_dock(self, new_dock) -> None:
+        """Tab this plugin's dock widgets together instead of letting QMainWindow stack
+        them vertically in the same area. Each dock has its own minimum-height content
+        (lists, buttons); stacked, their minimums sum and can force the QGIS main window
+        past the screen's usable height, which Windows refuses and logs as a repeating
+        setGeometry CRITICAL error (issue #129).
+        """
+        known_docks = (
+            self.dockwidget, self.vertical_scale_dock, self._holding_dock,
+            self._msa_dock, self.horizontal_scale_dock,
+        )
+        for existing in known_docks:
+            if existing is not None and existing is not new_dock:
+                self.iface.mainWindow().tabifyDockWidget(existing, new_dock)
+                return
+
     def run(self):
         """Toggle the Generate Profile dock (issue #67: clicking icon closes if already open)."""
 
@@ -797,6 +813,7 @@ class QAeroChart:
             self.dockwidget.tool_manager = self.tool_manager
             self.dockwidget.closingPlugin.connect(self.onClosePlugin)
             self.iface.addDockWidget(Qt.RightDockWidgetArea, self.dockwidget)
+            self._tabify_with_existing_qaerochart_dock(self.dockwidget)
             self.dockwidget.show()
             return
 
@@ -815,6 +832,7 @@ class QAeroChart:
             if self.vertical_scale_dock is None:
                 self.vertical_scale_dock = VerticalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.vertical_scale_dock)
+                self._tabify_with_existing_qaerochart_dock(self.vertical_scale_dock)
                 self.vertical_scale_dock.show()
                 return
 
@@ -834,6 +852,7 @@ class QAeroChart:
             if self._holding_dock is None:
                 self._holding_dock = HoldingDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self._holding_dock)
+                self._tabify_with_existing_qaerochart_dock(self._holding_dock)
                 self._holding_dock.show()
                 return
 
@@ -851,6 +870,7 @@ class QAeroChart:
             if self._msa_dock is None:
                 self._msa_dock = MSADockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self._msa_dock)
+                self._tabify_with_existing_qaerochart_dock(self._msa_dock)
                 self._msa_dock.show()
                 return
 
@@ -868,6 +888,7 @@ class QAeroChart:
             if self.horizontal_scale_dock is None:
                 self.horizontal_scale_dock = HorizontalScaleDockWidget(self.iface.mainWindow())
                 self.iface.addDockWidget(Qt.RightDockWidgetArea, self.horizontal_scale_dock)
+                self._tabify_with_existing_qaerochart_dock(self.horizontal_scale_dock)
                 self.horizontal_scale_dock.show()
                 return
 

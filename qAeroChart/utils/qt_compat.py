@@ -19,6 +19,10 @@ try:
     from qgis.PyQt.QtGui import QFont as _QFont
     from qgis.PyQt.QtWidgets import QMessageBox as _QMessageBox
     from qgis.PyQt.QtWidgets import QAbstractItemView as _QAbstractItemView
+    from qgis.PyQt.QtWidgets import QHeaderView as _QHeaderView
+    from qgis.PyQt.QtWidgets import QStyledItemDelegate as _QStyledItemDelegate
+    from qgis.PyQt.QtCore import QSignalBlocker as _QSignalBlocker
+    from qgis.PyQt.QtCore import QEvent as _QEvent
 
     # In QGIS 4 / PyQt6, QVariant may import but lack .Int/.String/.Double/.Bool
     # (PyQt6 removed these type constants from the Python QVariant binding).
@@ -51,6 +55,10 @@ except ImportError:
         from PyQt6.QtGui import QFont as _QFont  # type: ignore[no-redef]
         from PyQt6.QtWidgets import QMessageBox as _QMessageBox  # type: ignore[no-redef]
         from PyQt6.QtWidgets import QAbstractItemView as _QAbstractItemView  # type: ignore[no-redef]
+        from PyQt6.QtWidgets import QHeaderView as _QHeaderView  # type: ignore[no-redef]
+        from PyQt6.QtWidgets import QStyledItemDelegate as _QStyledItemDelegate  # type: ignore[no-redef]
+        from PyQt6.QtCore import QSignalBlocker as _QSignalBlocker  # type: ignore[no-redef]
+        from PyQt6.QtCore import QEvent as _QEvent  # type: ignore[no-redef]
 
         # PyQt6: QVariant not exposed. Use QMetaType.Type enum values (strict checking).
         try:
@@ -74,6 +82,10 @@ except ImportError:
         from PyQt5.QtGui import QFont as _QFont  # type: ignore[no-redef]
         from PyQt5.QtWidgets import QMessageBox as _QMessageBox  # type: ignore[no-redef]
         from PyQt5.QtWidgets import QAbstractItemView as _QAbstractItemView  # type: ignore[no-redef]
+        from PyQt5.QtWidgets import QHeaderView as _QHeaderView  # type: ignore[no-redef]
+        from PyQt5.QtWidgets import QStyledItemDelegate as _QStyledItemDelegate  # type: ignore[no-redef]
+        from PyQt5.QtCore import QSignalBlocker as _QSignalBlocker  # type: ignore[no-redef]
+        from PyQt5.QtCore import QEvent as _QEvent  # type: ignore[no-redef]
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +102,8 @@ class _QtCompat:
 
     # Item roles ---------------------------------------------------------------
     UserRole = getattr(_Qt, "UserRole", None) or _Qt.ItemDataRole.UserRole
+    EditRole = getattr(_Qt, "EditRole", None) or _Qt.ItemDataRole.EditRole
+    DisplayRole = getattr(_Qt, "DisplayRole", None) or _Qt.ItemDataRole.DisplayRole
 
     # Item flags ---------------------------------------------------------------
     ItemIsSelectable = (
@@ -144,6 +158,9 @@ class _QtCompat:
     # Window modality ----------------------------------------------------------
     NonModal = getattr(_Qt, "NonModal", None) or _Qt.WindowModality.NonModal
 
+    # Orientation ---------------------------------------------------------------
+    Vertical = getattr(_Qt, "Vertical", None) or _Qt.Orientation.Vertical
+
 
 Qt = _QtCompat
 
@@ -183,6 +200,31 @@ class _QAbstractItemViewCompat:
         or _QAbstractItemView.SelectionMode.ExtendedSelection
     )
 
+    SingleSelection = (
+        getattr(_QAbstractItemView, "SingleSelection", None)
+        or _QAbstractItemView.SelectionMode.SingleSelection
+    )
+
+    DoubleClicked = (
+        getattr(_QAbstractItemView, "DoubleClicked", None)
+        or _QAbstractItemView.EditTrigger.DoubleClicked
+    )
+
+    SelectedClicked = (
+        getattr(_QAbstractItemView, "SelectedClicked", None)
+        or _QAbstractItemView.EditTrigger.SelectedClicked
+    )
+
+    AnyKeyPressed = (
+        getattr(_QAbstractItemView, "AnyKeyPressed", None)
+        or _QAbstractItemView.EditTrigger.AnyKeyPressed
+    )
+
+    EditKeyPressed = (
+        getattr(_QAbstractItemView, "EditKeyPressed", None)
+        or _QAbstractItemView.EditTrigger.EditKeyPressed
+    )
+
     AllEditTriggers = (
         getattr(_QAbstractItemView, "AllEditTriggers", None)
         or _QAbstractItemView.EditTrigger.AllEditTriggers
@@ -205,6 +247,29 @@ class _QAbstractItemViewCompat:
 
 
 QAbstractItemView = _QAbstractItemViewCompat
+
+
+# ---------------------------------------------------------------------------
+# QHeaderView resize mode constants
+# ---------------------------------------------------------------------------
+
+class _QHeaderViewCompat:
+    """Normalised QHeaderView enum values."""
+
+    Stretch = getattr(_QHeaderView, "Stretch", None) or _QHeaderView.ResizeMode.Stretch
+
+
+QHeaderView = _QHeaderViewCompat
+
+
+# ---------------------------------------------------------------------------
+# QStyledItemDelegate / QSignalBlocker / QEvent — identical API in PyQt5/6,
+# re-exported here so plugin code never imports qgis.PyQt/PyQt5/PyQt6 directly.
+# ---------------------------------------------------------------------------
+
+QStyledItemDelegate = _QStyledItemDelegate
+QSignalBlocker = _QSignalBlocker
+QEvent = _QEvent
 
 
 # ---------------------------------------------------------------------------

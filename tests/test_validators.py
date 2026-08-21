@@ -172,3 +172,96 @@ class TestValidateRunwayLength:
     def test_non_numeric_rejected(self):
         ok, _msg, val = Validators.validate_runway_length("long")
         assert not ok and val is None
+
+
+# ── validate_bearing ─────────────────────────────────────────────────────────
+
+class TestValidateBearing:
+    def test_valid_zero(self):
+        ok, _msg, val = Validators.validate_bearing(0)
+        assert ok and val == pytest.approx(0.0)
+
+    def test_valid_upper_boundary(self):
+        ok, _msg, val = Validators.validate_bearing(360)
+        assert ok and val == pytest.approx(360.0)
+
+    def test_valid_mid_range(self):
+        ok, _msg, val = Validators.validate_bearing(123.4)
+        assert ok and val == pytest.approx(123.4)
+
+    def test_negative_rejected(self):
+        ok, msg, val = Validators.validate_bearing(-1)
+        assert not ok and val is None
+        assert "0" in msg and "360" in msg
+
+    def test_over_range_rejected(self):
+        ok, _msg, val = Validators.validate_bearing(360.1)
+        assert not ok and val is None
+
+    def test_non_numeric_rejected(self):
+        ok, _msg, val = Validators.validate_bearing("north")
+        assert not ok and val is None
+
+
+# ── validate_radius_nm ───────────────────────────────────────────────────────
+
+class TestValidateRadiusNm:
+    def test_valid_zero(self):
+        ok, _msg, val = Validators.validate_radius_nm(0)
+        assert ok and val == pytest.approx(0.0)
+
+    def test_valid_upper_boundary(self):
+        ok, _msg, val = Validators.validate_radius_nm(150)
+        assert ok and val == pytest.approx(150.0)
+
+    def test_negative_rejected(self):
+        ok, msg, val = Validators.validate_radius_nm(-1)
+        assert not ok and val is None
+        assert "negative" in msg.lower()
+
+    def test_over_range_rejected(self):
+        ok, _msg, val = Validators.validate_radius_nm(150.1)
+        assert not ok and val is None
+
+    def test_non_numeric_rejected(self):
+        ok, _msg, val = Validators.validate_radius_nm("far")
+        assert not ok and val is None
+
+
+# ── validate_msa_sector ──────────────────────────────────────────────────────
+
+class TestValidateMsaSector:
+    def test_valid_sector(self):
+        ok, errors = Validators.validate_msa_sector(0, 90, 0, 25, 2500)
+        assert ok and errors == {}
+
+    def test_invalid_start_bearing(self):
+        ok, errors = Validators.validate_msa_sector(400, 90, 0, 25, 2500)
+        assert not ok
+        assert 'start_brg' in errors
+
+    def test_invalid_end_bearing(self):
+        ok, errors = Validators.validate_msa_sector(0, -10, 0, 25, 2500)
+        assert not ok
+        assert 'end_brg' in errors
+
+    def test_inner_greater_than_outer_rejected(self):
+        ok, errors = Validators.validate_msa_sector(0, 90, 30, 25, 2500)
+        assert not ok
+        assert 'outer_r_nm' in errors
+
+    def test_inner_equal_outer_rejected(self):
+        ok, errors = Validators.validate_msa_sector(0, 90, 25, 25, 2500)
+        assert not ok
+        assert 'outer_r_nm' in errors
+
+    def test_invalid_altitude(self):
+        ok, errors = Validators.validate_msa_sector(0, 90, 0, 25, 70000)
+        assert not ok
+        assert 'altitude_ft' in errors
+
+    def test_multiple_errors_collected(self):
+        ok, errors = Validators.validate_msa_sector(-5, 400, 0, 25, 2500)
+        assert not ok
+        assert 'start_brg' in errors
+        assert 'end_brg' in errors

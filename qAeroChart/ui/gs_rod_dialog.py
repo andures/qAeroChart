@@ -15,6 +15,11 @@ except ImportError:
 from ..utils.qt_compat import Qt, QAbstractItemView, MsgLevel
 from ..core.gs_rod_calculator import GsRodConfig, compute_table, DEFAULT_GS_VALUES
 
+try:
+    from qgis.gui import QgsCollapsibleGroupBox
+except ImportError:
+    QgsCollapsibleGroupBox = QtWidgets.QGroupBox  # fallback fuera de QGIS
+
 
 class GsRodTableDialog(QtWidgets.QDialog):
     """Interactive builder for GS / Rate-of-Descent tables with live preview."""
@@ -139,7 +144,9 @@ class GsRodTableDialog(QtWidgets.QDialog):
         root.addLayout(move_row)
 
         # ── Layout placement ─────────────────────────────────────────────
-        placement_grp = QtWidgets.QGroupBox("Layout placement")
+        placement_grp = QgsCollapsibleGroupBox("Layout placement")
+        placement_grp.setCollapsed(True)
+        placement_grp.setSaveCollapsedState(False)
         pl = QtWidgets.QGridLayout(placement_grp)
         pl.setHorizontalSpacing(8)
         pl.setVerticalSpacing(6)

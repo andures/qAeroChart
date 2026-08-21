@@ -32,6 +32,7 @@ from .qaerochart_dockwidget import QAeroChartDockWidget
 from .vertical_scale_dialog import VerticalScaleDockWidget
 from .horizontal_scale_dialog import HorizontalScaleDockWidget
 from .holding_dock import HoldingDockWidget
+from .msa_dock import MSADockWidget
 from .utils.logger import log
 from .utils.qt_compat import Qt
 import os.path
@@ -118,6 +119,8 @@ class QAeroChart:
         # Nominal Holding dock (Issue #94)
         self._holding_dock = None
         self.holding_action = None
+        self._msa_dock = None
+        self.msa_action = None
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -266,6 +269,20 @@ class QAeroChart:
         self.holding_action.triggered.connect(self.open_holding_dialog)
         self.tools_toolbar.addAction(self.holding_action)
 
+        # MSA Sector Generator action (Issue #104)
+        msa_icon_path = os.path.join(self.plugin_dir, 'icons', 'icon_msa.svg')
+        if not os.path.exists(msa_icon_path):
+            msa_icon_path = icon_path
+        self.msa_action = QAction(
+            QIcon(msa_icon_path),
+            self.tr('MSA Sector Generator'),
+            self.iface.mainWindow(),
+        )
+        self.msa_action.setObjectName('qAeroChartMsaAction')
+        self.msa_action.setStatusTip(self.tr('Draw MSA (Minimum Sector Altitude) donut/sector figures'))
+        self.msa_action.triggered.connect(self.open_msa_dock)
+        self.tools_toolbar.addAction(self.msa_action)
+
         # Create top-level menu "qAeroChart" and insert it to the right of qPANSOPY if present (issue #3)
         try:
             menu_bar = self.iface.mainWindow().menuBar()
@@ -276,6 +293,7 @@ class QAeroChart:
             self.top_menu.addAction(self.vertical_scale_action)
             self.top_menu.addAction(self.horizontal_scale_action)
             self.top_menu.addAction(self.holding_action)
+            self.top_menu.addAction(self.msa_action)
 
             # Try to position it right after qPANSOPY
             inserted = False
@@ -530,6 +548,17 @@ class QAeroChart:
             self._holding_dock = None
         if self.holding_action:
             self.holding_action = None
+
+        # Clean up MSA Sector Generator dock
+        if self._msa_dock:
+            try:
+                self.iface.removeDockWidget(self._msa_dock)
+                self._msa_dock.deleteLater()
+            except Exception:  # nosec B110 - best-effort teardown step; other cleanup must still proceed
+                pass
+            self._msa_dock = None
+        if self.msa_action:
+            self.msa_action = None
 
     # --------------------------------------------------------------------------
 
@@ -815,6 +844,23 @@ class QAeroChart:
                 self._holding_dock.raise_()
         except Exception as exc:
             log(f"Could not toggle Holding dock: {exc}", "ERROR")
+
+    def open_msa_dock(self) -> None:
+        """Toggle the MSA Sector Generator dock (issue #104)."""
+        try:
+            if self._msa_dock is None:
+                self._msa_dock = MSADockWidget(self.iface.mainWindow())
+                self.iface.addDockWidget(Qt.RightDockWidgetArea, self._msa_dock)
+                self._msa_dock.show()
+                return
+
+            if self._msa_dock.isVisible():
+                self._msa_dock.hide()
+            else:
+                self._msa_dock.show()
+                self._msa_dock.raise_()
+        except Exception as exc:
+            log(f"Could not toggle MSA dock: {exc}", "ERROR")
 
     def open_horizontal_scale_dock(self) -> None:
         """Toggle the Horizontal Scale dock (issue #69)."""

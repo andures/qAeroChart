@@ -20,6 +20,7 @@ This directory contains all icon assets for the qAeroChart plugin.
 ## Current Icons
 
 - ✅ icon.png - Main plugin icon (jet engine with gear design)
+- ✅ icon_msa.svg - MSA (Minimum Sector Altitude) donut/sector generator tool
 
 ## Adding New Icons
 

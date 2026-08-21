@@ -89,6 +89,102 @@ class Validators:
             return (False, "Invalid elevation format", None)
 
     @staticmethod
+    def validate_bearing(value: str | float) -> tuple[bool, str, float | None]:
+        """
+        Validate a bearing/azimuth value (degrees, 0-360).
+
+        Args:
+            value (str or float): Bearing value
+
+        Returns:
+            tuple: (is_valid, error_message, parsed_value)
+        """
+        try:
+            parsed = float(value)
+
+            if parsed < 0 or parsed > 360:
+                return (False, "Bearing must be between 0 and 360 degrees", None)
+
+            return (True, "", parsed)
+
+        except (ValueError, TypeError):
+            return (False, "Invalid bearing format", None)
+
+    @staticmethod
+    def validate_radius_nm(value: str | float) -> tuple[bool, str, float | None]:
+        """
+        Validate a sector radius value (Nautical Miles).
+
+        Args:
+            value (str or float): Radius value
+
+        Returns:
+            tuple: (is_valid, error_message, parsed_value)
+        """
+        try:
+            parsed = float(value)
+
+            if parsed < 0:
+                return (False, "Radius cannot be negative", None)
+
+            # Reasonable range check (0-150 NM for MSA sector charts)
+            if parsed > 150:
+                return (False, "Radius exceeds reasonable range (max 150 NM)", None)
+
+            return (True, "", parsed)
+
+        except (ValueError, TypeError):
+            return (False, "Invalid radius format", None)
+
+    @staticmethod
+    def validate_msa_sector(start_brg, end_brg, inner_r_nm, outer_r_nm, altitude_ft):
+        """
+        Validate all fields of one MSA sector/ring at once.
+
+        Args:
+            start_brg (str or float): Start bearing (degrees)
+            end_brg (str or float): End bearing (degrees)
+            inner_r_nm (str or float): Inner radius (NM)
+            outer_r_nm (str or float): Outer radius (NM)
+            altitude_ft (str or float): Sector altitude (feet)
+
+        Returns:
+            tuple: (is_valid, error_messages_dict)
+        """
+        errors = {}
+
+        is_valid, msg, _ = Validators.validate_bearing(start_brg)
+        if not is_valid:
+            errors['start_brg'] = msg
+
+        is_valid, msg, _ = Validators.validate_bearing(end_brg)
+        if not is_valid:
+            errors['end_brg'] = msg
+
+        is_valid, msg, inner_parsed = Validators.validate_radius_nm(inner_r_nm)
+        if not is_valid:
+            errors['inner_r_nm'] = msg
+
+        is_valid, msg, outer_parsed = Validators.validate_radius_nm(outer_r_nm)
+        if not is_valid:
+            errors['outer_r_nm'] = msg
+
+        if (
+            'inner_r_nm' not in errors
+            and 'outer_r_nm' not in errors
+            and inner_parsed is not None
+            and outer_parsed is not None
+            and inner_parsed >= outer_parsed
+        ):
+            errors['outer_r_nm'] = "Outer radius must be greater than inner radius"
+
+        is_valid, msg, _ = Validators.validate_elevation(altitude_ft)
+        if not is_valid:
+            errors['altitude_ft'] = msg
+
+        return (len(errors) == 0, errors)
+
+    @staticmethod
     def validate_runway_direction(value: str) -> tuple[bool, str]:
         """
         Validate runway direction format (e.g., "09/27", "18/36").

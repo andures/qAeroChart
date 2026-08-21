@@ -402,3 +402,46 @@ class _MsgLevel:
 
 
 MsgLevel = _MsgLevel
+
+
+# ---------------------------------------------------------------------------
+# QgsMapLayerProxyModel.Filter compatibility (moved to Qgis.LayerFilter in QGIS 4)
+# ---------------------------------------------------------------------------
+
+def _resolve_layer_filter(name: str, fallback_int: int):
+    """Return the layer-filter enum value for *name*, QGIS 3 or 4."""
+    try:
+        from qgis.core import Qgis as _Qgis
+        # QGIS 4: Qgis.LayerFilter.PointLayer etc.
+        _LF = getattr(_Qgis, "LayerFilter", None)
+        if _LF is not None:
+            val = getattr(_LF, name, None)
+            if val is not None:
+                return val
+    except Exception:  # nosec B110 - falls through to the QGIS 3 lookup below
+        pass
+    try:
+        from qgis.core import QgsMapLayerProxyModel as _QMLPM
+        # QGIS 3: QgsMapLayerProxyModel.PointLayer (flat) or .Filter.PointLayer
+        val = getattr(_QMLPM, name, None)
+        if val is not None:
+            return val
+        _Filter = getattr(_QMLPM, "Filter", None)
+        if _Filter is not None:
+            val = getattr(_Filter, name, None)
+            if val is not None:
+                return val
+    except Exception:  # nosec B110 - falls through to the explicit fallback value below
+        pass
+    return fallback_int
+
+
+class _LayerFilter:
+    """Cross-version layer-filter constants for QgsMapLayerComboBox.setFilters().
+
+    Safe to reference at module level — never raises AttributeError.
+    """
+    PointLayer = _resolve_layer_filter("PointLayer", 1)
+
+
+LayerFilter = _LayerFilter

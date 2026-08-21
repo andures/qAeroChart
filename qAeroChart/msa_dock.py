@@ -18,6 +18,7 @@ except ImportError:
         from PyQt5 import QtWidgets  # type: ignore
 
 from qgis.core import QgsProject
+from qgis.gui import QgsMapLayerComboBox
 from qgis.utils import iface
 
 from .utils.qt_compat import (
@@ -27,6 +28,7 @@ from .utils.qt_compat import (
     QHeaderView,
     QSignalBlocker,
     QStyledItemDelegate,
+    LayerFilter,
     MsgLevel,
 )
 from .utils.validators import Validators
@@ -116,6 +118,9 @@ class MSADockWidget(QtWidgets.QDockWidget):
         self._signals_connected = False
         # (source_layer_id, feature_id) -> msa_id, so committing again for the same
         # point feature replaces its figure instead of piling up a duplicate.
+        # In-memory only (not persisted to the layer/project): "Replace existing
+        # MSA" only recognizes figures committed earlier in this dock's lifetime,
+        # not ones from a previous QGIS session.
         self._committed_by_feature: dict[tuple, str] = {}
 
         self._build_ui()
@@ -131,19 +136,38 @@ class MSADockWidget(QtWidgets.QDockWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        preset_row = QtWidgets.QHBoxLayout()
-        preset_row.addWidget(QtWidgets.QLabel("Quick Preset:"))
+        top_grid = QtWidgets.QGridLayout()
+        top_grid.setColumnStretch(1, 1)
+
+        lbl_preset = QtWidgets.QLabel("Quick Preset:")
+        lbl_layer = QtWidgets.QLabel("Source Layer:")
+        label_width = max(
+            lbl_preset.sizeHint().width(), lbl_layer.sizeHint().width()
+        )
+        for lbl in (lbl_preset, lbl_layer):
+            lbl.setMinimumWidth(label_width)
+            lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         self.combo_preset = QtWidgets.QComboBox()
         self.combo_preset.addItems([
             "Custom", "Single Circle (25 NM)", "2 Sectors (180°)",
             "3 Sectors (120°)", "4 Quadrants (90°)",
         ])
-        preset_row.addWidget(self.combo_preset)
         self.chk_preview = QtWidgets.QCheckBox("Enable Live Preview")
         self.chk_preview.setChecked(True)
-        preset_row.addWidget(self.chk_preview)
-        preset_row.addStretch()
-        layout.addLayout(preset_row)
+        top_grid.addWidget(lbl_preset, 0, 0)
+        top_grid.addWidget(self.combo_preset, 0, 1)
+        top_grid.addWidget(self.chk_preview, 0, 2)
+
+        self.combo_layer = QgsMapLayerComboBox()
+        self.combo_layer.setFilters(LayerFilter.PointLayer)
+        top_grid.addWidget(lbl_layer, 1, 0)
+        top_grid.addWidget(self.combo_layer, 1, 1, 1, 2)
+
+        layout.addLayout(top_grid)
+        active = iface.activeLayer()
+        if active is not None and active.geometryType() == _GEOM_POINT:
+            self.combo_layer.setLayer(active)
 
         self.lbl_status = QtWidgets.QLabel("Select a point feature on canvas.")
         self.lbl_status.setStyleSheet("color: #d9534f; font-weight: bold;")
@@ -217,6 +241,10 @@ class MSADockWidget(QtWidgets.QDockWidget):
         row_btns.addStretch()
         layout.addLayout(row_btns)
 
+        self.chk_replace_existing = QtWidgets.QCheckBox("Replace existing MSA for this point")
+        self.chk_replace_existing.setChecked(True)
+        layout.addWidget(self.chk_replace_existing)
+
         self.btn_generate = QtWidgets.QPushButton("Commit MSA Layer to Map")
         self.btn_generate.setStyleSheet(
             "font-weight: bold; background-color: #00557f; color: white; padding: 8px;"
@@ -227,6 +255,7 @@ class MSADockWidget(QtWidgets.QDockWidget):
         self._connect_ui_signals()
 
     def _connect_ui_signals(self):
+        self.combo_layer.layerChanged.connect(self._on_source_layer_changed)
         self.combo_preset.currentIndexChanged.connect(self.apply_preset)
         self.radio_mag.toggled.connect(self._toggle_magvar_visibility)
         self.radio_mag.toggled.connect(self.update_live_preview)
@@ -264,8 +293,7 @@ class MSADockWidget(QtWidgets.QDockWidget):
         canvas = iface.mapCanvas()
         canvas.selectionChanged.connect(self.update_live_preview)
         canvas.extentsChanged.connect(self.update_live_preview)
-        iface.currentLayerChanged.connect(self._on_current_layer_changed)
-        self._setup_layer_connections(iface.activeLayer())
+        self._setup_layer_connections(self.combo_layer.currentLayer())
         self._signals_connected = True
 
     def _disconnect_canvas_signals(self):
@@ -275,7 +303,6 @@ class MSADockWidget(QtWidgets.QDockWidget):
         try:
             canvas.selectionChanged.disconnect(self.update_live_preview)
             canvas.extentsChanged.disconnect(self.update_live_preview)
-            iface.currentLayerChanged.disconnect(self._on_current_layer_changed)
         except Exception:  # nosec B110 - best-effort cleanup; a stale/already-cleared state is harmless
             pass
         self._setup_layer_connections(None)
@@ -310,7 +337,7 @@ class MSADockWidget(QtWidgets.QDockWidget):
         except RuntimeError:
             self._monitored_layer = None
 
-    def _on_current_layer_changed(self, layer):
+    def _on_source_layer_changed(self, layer):
         self._setup_layer_connections(layer)
         self.update_live_preview()
 
@@ -379,13 +406,15 @@ class MSADockWidget(QtWidgets.QDockWidget):
     def _active_point_feature(self):
         """Return (layer, feature) for the single selected point feature, or (None, None).
 
+        The source layer comes from ``combo_layer`` (Issue #104 follow-up:
+        explicit dropdown instead of the QGIS Layers-panel active layer).
         Requires exactly one selected feature (matches ``holding_dock.py``'s
         ``_pick_fix_from_line`` convention: ``selectedFeatureCount() != 1``),
         instead of silently taking the first of a possibly-larger selection.
         """
-        layer = iface.activeLayer()
+        layer = self.combo_layer.currentLayer()
         if not layer or layer.geometryType() != _GEOM_POINT:
-            self.lbl_status.setText("Active layer in Layers Panel must be a Point layer.")
+            self.lbl_status.setText("Choose a point layer in the dropdown above.")
             self.lbl_status.setStyleSheet("color: #d9534f; font-weight: bold;")
             return None, None
 
@@ -498,9 +527,14 @@ class MSADockWidget(QtWidgets.QDockWidget):
         layer = self._layer_manager.get_or_create_layer(iface)
 
         # Re-committing for the same point feature replaces its previous MSA
-        # figure instead of duplicating it (mirrors HoldingLayerManager.remove_holding).
+        # figure instead of duplicating it (mirrors HoldingLayerManager.remove_holding),
+        # unless "Replace existing MSA for this point" is unchecked, in which case
+        # the new figure is added alongside the previous one(s).
         feature_key = (source_layer.id(), feature.id())
-        existing_msa_id = self._committed_by_feature.get(feature_key)
+        existing_msa_id = (
+            self._committed_by_feature.get(feature_key)
+            if self.chk_replace_existing.isChecked() else None
+        )
         if existing_msa_id:
             self._layer_manager.remove_sectors(layer, existing_msa_id)
 

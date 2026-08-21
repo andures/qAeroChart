@@ -12,7 +12,7 @@ except ImportError:
     except ImportError:
         from PyQt5 import QtWidgets  # type: ignore
 
-from ..utils.qt_compat import Qt, QAbstractItemView
+from ..utils.qt_compat import Qt, QAbstractItemView, MsgLevel
 from ..core.gs_rod_calculator import GsRodConfig, compute_table, DEFAULT_GS_VALUES
 
 try:
@@ -30,6 +30,8 @@ class GsRodTableDialog(QtWidgets.QDialog):
         self.setWindowTitle("GS / Rate of Descent Table")
         self.setWindowModality(Qt.NonModal)
         self.resize(760, 540)
+        self._rod_first = False  # Issue #120: timing/ROD row order toggle
+        self._data_row_indices = None  # (timing_row_idx, rod_row_idx) after last refresh
         self._build_ui()
         self._refresh_preview()
 
@@ -121,10 +123,25 @@ class GsRodTableDialog(QtWidgets.QDialog):
 
         self.table = QtWidgets.QTableWidget()
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
         root.addWidget(self.table, stretch=1)
+
+        # ── Row reorder (Issue #120) ─────────────────────────────────────
+        move_row = QtWidgets.QHBoxLayout()
+        move_row.setSpacing(6)
+        move_row.addWidget(QtWidgets.QLabel("Reorder FAF-MAPt / Rate of Descent rows:"))
+        self.btn_move_up = QtWidgets.QPushButton("▲ Move Up")
+        self.btn_move_down = QtWidgets.QPushButton("▼ Move Down")
+        self.btn_move_up.clicked.connect(self._on_move_row_up)
+        self.btn_move_down.clicked.connect(self._on_move_row_down)
+        move_row.addWidget(self.btn_move_up)
+        move_row.addWidget(self.btn_move_down)
+        move_row.addStretch()
+        root.addLayout(move_row)
 
         # ── Layout placement ─────────────────────────────────────────────
         placement_grp = QgsCollapsibleGroupBox("Layout placement")
@@ -271,6 +288,7 @@ class GsRodTableDialog(QtWidgets.QDialog):
             unit_gs=self.line_unit_gs.text().strip() or "KT",
             unit_timing=self.line_unit_timing.text().strip() or "min:s",
             footer=self.line_footer.text().strip(),
+            rod_first=self._rod_first,
         )
 
     def _refresh_preview(self) -> None:
@@ -278,8 +296,10 @@ class GsRodTableDialog(QtWidgets.QDialog):
             cfg = self._build_config()
             rows = compute_table(cfg)
         except Exception:
+            self._data_row_indices = None
             return
         if not rows:
+            self._data_row_indices = None
             return
         n_rows = len(rows)
         n_cols = len(rows[0])
@@ -290,6 +310,7 @@ class GsRodTableDialog(QtWidgets.QDialog):
         title_rows = 1 if cfg.title else 0
         header_row_idx = title_rows
         footer_row_idx = n_rows - 1 if cfg.footer else None
+        self._data_row_indices = (header_row_idx + 1, header_row_idx + 2)
         for r, row in enumerate(rows):
             is_title = r < title_rows
             is_footer = r == footer_row_idx and footer_row_idx is not None
@@ -307,6 +328,41 @@ class GsRodTableDialog(QtWidgets.QDialog):
             if is_title or is_footer:
                 self.table.setSpan(r, 0, 1, n_cols)
         self.table.resizeColumnsToContents()
+
+    # ------------------------------------------------------------------
+    # Row reorder (Issue #120)
+    # ------------------------------------------------------------------
+
+    def _on_move_row_up(self) -> None:
+        """Move the Rate-of-Descent row above the FAF-MAPt row."""
+        if not self._data_row_indices:
+            return
+        top, bottom = self._data_row_indices
+        if self.table.currentRow() != bottom:
+            self._warn_select_data_row()
+            return
+        self._rod_first = not self._rod_first
+        self._refresh_preview()
+        self.table.selectRow(top)
+
+    def _on_move_row_down(self) -> None:
+        """Move the FAF-MAPt row above the Rate-of-Descent row."""
+        if not self._data_row_indices:
+            return
+        top, bottom = self._data_row_indices
+        if self.table.currentRow() != top:
+            self._warn_select_data_row()
+            return
+        self._rod_first = not self._rod_first
+        self._refresh_preview()
+        self.table.selectRow(bottom)
+
+    def _warn_select_data_row(self) -> None:
+        if self.iface:
+            self.iface.messageBar().pushMessage(
+                "qAeroChart", "Select the FAF-MAPt or Rate of Descent row to reorder it.",
+                level=MsgLevel.Warning, duration=3,
+            )
 
     # ------------------------------------------------------------------
     # Layout helpers

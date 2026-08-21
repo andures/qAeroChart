@@ -29,6 +29,7 @@ class GsRodConfig:
     unit_gs: str = "KT"
     unit_timing: str = "min:s"
     footer: str = ""
+    rod_first: bool = False  # Issue #120: swap the timing/ROD row order when True
 
 
 def _format_seconds(total: float) -> str:
@@ -57,8 +58,9 @@ def compute_table(cfg: GsRodConfig) -> list[list[str]]:
     -------------
     - Row 0 (optional): title row — cfg.title in col 0, empty in remaining cols
     - Row 1 (always):   header row — ["Ground Speed", unit_gs, gs1, gs2, ...]
-    - Row 2 (always):   timing row — [label_timing, unit_timing, t1, t2, ...]
-    - Row 3 (always):   ROD row    — [label_rod, "ft/min", r1, r2, ...]
+    - Row 2/3 (always): timing row and ROD row, in the order controlled by
+      cfg.rod_first (timing first when False, the default; ROD first when True)
+      — [label_timing, unit_timing, t1, t2, ...] / [label_rod, "ft/min", r1, r2, ...]
     - Row N (optional): footer row — cfg.footer in col 0, empty in remaining cols
     """
     num_gs = len(cfg.gs_values)
@@ -83,12 +85,14 @@ def compute_table(cfg: GsRodConfig) -> list[list[str]]:
     # ── Timing row ──────────────────────────────────────────────────────
     label_t = cfg.label_timing or f"FAF-MAPt {cfg.distance_nm:.1f}NM"
     timing_vals = [compute_timing(cfg.distance_nm, gs) for gs in cfg.gs_values]
-    rows.append([label_t, cfg.unit_timing] + timing_vals)
+    timing_row = [label_t, cfg.unit_timing] + timing_vals
 
     # ── ROD row ─────────────────────────────────────────────────────────
     label_r = cfg.label_rod or f"Rate of Descent {cfg.gradient_pct:.1f}%"
     rod_vals = [str(compute_rod(gs, cfg.gradient_pct)) for gs in cfg.gs_values]
-    rows.append([label_r, "ft/min"] + rod_vals)
+    rod_row = [label_r, "ft/min"] + rod_vals
+
+    rows.extend([rod_row, timing_row] if cfg.rod_first else [timing_row, rod_row])
 
     # ── Optional footer row ─────────────────────────────────────────────
     if cfg.footer:

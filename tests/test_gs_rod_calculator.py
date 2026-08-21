@@ -214,3 +214,48 @@ class TestCustomLabels:
 class TestDefaultGsValues:
     def test_default_gs_values(self):
         assert DEFAULT_GS_VALUES == (70, 90, 100, 120, 140, 160)
+
+
+# ── Row order (Issue #120) ──────────────────────────────────────────────────
+
+class TestComputeTableRowOrder:
+    """rod_first controls whether the timing or ROD row renders first."""
+
+    def test_default_order_timing_first(self):
+        cfg = GsRodConfig(distance_nm=5.2, gradient_pct=5.3, title="Rate of Descent")
+        rows = compute_table(cfg)
+        assert "FAF-MAPt" in rows[2][0]
+        assert "Rate of Descent" in rows[3][0]
+
+    def test_rod_first_swaps_order_with_title(self):
+        cfg = GsRodConfig(
+            distance_nm=5.2, gradient_pct=5.3, title="Rate of Descent", rod_first=True,
+        )
+        rows = compute_table(cfg)
+        assert "Rate of Descent" in rows[2][0]
+        assert "FAF-MAPt" in rows[3][0]
+
+    def test_rod_first_swaps_order_no_title(self):
+        cfg = GsRodConfig(distance_nm=5.2, gradient_pct=5.3, title="", rod_first=True)
+        rows = compute_table(cfg)
+        assert "Rate of Descent" in rows[1][0]
+        assert "FAF-MAPt" in rows[2][0]
+
+    def test_rod_first_preserves_row_values(self):
+        """Swapping order must not change the computed values, only their position."""
+        cfg_default = GsRodConfig(distance_nm=5.2, gradient_pct=5.3, title="")
+        cfg_rod_first = GsRodConfig(distance_nm=5.2, gradient_pct=5.3, title="", rod_first=True)
+        rows_default = compute_table(cfg_default)
+        rows_rod_first = compute_table(cfg_rod_first)
+        assert rows_default[1] == rows_rod_first[2]  # timing row unchanged
+        assert rows_default[2] == rows_rod_first[1]  # rod row unchanged
+
+    def test_row_count_unaffected(self):
+        cfg_default = GsRodConfig(
+            distance_nm=5.2, gradient_pct=5.3, title="Rate of Descent", footer="note",
+        )
+        cfg_rod_first = GsRodConfig(
+            distance_nm=5.2, gradient_pct=5.3, title="Rate of Descent", footer="note",
+            rod_first=True,
+        )
+        assert len(compute_table(cfg_default)) == len(compute_table(cfg_rod_first))

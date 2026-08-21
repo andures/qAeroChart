@@ -144,6 +144,9 @@ class _QtCompat:
     # Window modality ----------------------------------------------------------
     NonModal = getattr(_Qt, "NonModal", None) or _Qt.WindowModality.NonModal
 
+    # Orientation ---------------------------------------------------------------
+    Vertical = getattr(_Qt, "Vertical", None) or _Qt.Orientation.Vertical
+
 
 Qt = _QtCompat
 

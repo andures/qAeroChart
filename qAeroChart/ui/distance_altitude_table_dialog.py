@@ -10,6 +10,11 @@ from ..core.table_style_manager import TableStyleManager
 from ..core.dist_alt_calculator import DistAltConfig, compute_steps, steps_to_numeric_columns
 from ..core.distance_altitude_table import build_table_rows, compute_column_widths
 
+try:
+    from qgis.gui import QgsCollapsibleGroupBox
+except ImportError:
+    QgsCollapsibleGroupBox = QtWidgets.QGroupBox  # fallback fuera de QGIS
+
 
 class DistanceAltitudeTableDialog(QtWidgets.QDialog):
     """Interactive builder for distance/altitude tables with live preview."""
@@ -130,7 +135,9 @@ class DistanceAltitudeTableDialog(QtWidgets.QDialog):
         layout.addWidget(self.table, stretch=1)
 
         # Layout/placement options
-        options_grp = QtWidgets.QGroupBox("Layout placement")
+        options_grp = QgsCollapsibleGroupBox("Layout placement")
+        options_grp.setCollapsed(True)
+        options_grp.setSaveCollapsedState(False)
         options_layout = QtWidgets.QGridLayout(options_grp)
         options_layout.setHorizontalSpacing(8)
         options_layout.setVerticalSpacing(6)

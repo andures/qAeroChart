@@ -94,6 +94,7 @@ qgis_core.Qgis = _QgisMock
 # Patch sys.modules so any "from qgis.core import ..." resolves to our stubs
 sys.modules.setdefault("qgis", MagicMock())
 sys.modules["qgis.core"] = qgis_core
+sys.modules["qgis.gui"] = MagicMock()
 
 # Build a real PyQt QtCore mock with our stubs
 _qtcore_mock = MagicMock()
